@@ -30,6 +30,7 @@ export default function LoginPage() {
       } else {
         router.push('/dashboard')
       }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       setError('An unexpected error occurred')
     } finally {

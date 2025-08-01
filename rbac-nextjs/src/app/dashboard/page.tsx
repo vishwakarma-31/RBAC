@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Shield, Users, Key, Link as LinkIcon } from 'lucide-react'
+import { Users, Key, Link as LinkIcon } from 'lucide-react'
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
