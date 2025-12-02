@@ -1,13 +1,13 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme/theme-toggle'
-import Link from 'next/link'
-import { LogOut, Shield, Users, Key } from 'lucide-react'
+import { LogOut } from 'lucide-react'
+import { Sidebar } from '@/components/dashboard/sidebar'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export default function DashboardLayout({
   children,
@@ -17,6 +17,7 @@ export default function DashboardLayout({
   const [user, setUser] = useState<import('@supabase/supabase-js').User | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     const getUser = async () => {
@@ -83,36 +84,25 @@ export default function DashboardLayout({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex space-x-8">
           <aside className="w-64">
-            <nav className="space-y-2">
-              <Link
-                href="/dashboard"
-                className="flex items-center px-3 py-2 text-sm font-medium text-muted-foreground rounded-md hover:bg-accent hover:text-accent-foreground"
-              >
-                <Shield className="h-5 w-5 mr-3" />
-                Dashboard
-              </Link>
-              <Link
-                href="/dashboard/permissions"
-                className="flex items-center px-3 py-2 text-sm font-medium text-muted-foreground rounded-md hover:bg-accent hover:text-accent-foreground"
-              >
-                <Key className="h-5 w-5 mr-3" />
-                Permissions
-              </Link>
-              <Link
-                href="/dashboard/roles"
-                className="flex items-center px-3 py-2 text-sm font-medium text-muted-foreground rounded-md hover:bg-accent hover:text-accent-foreground"
-              >
-                <Users className="h-5 w-5 mr-3" />
-                Roles
-              </Link>
-            </nav>
+            <Sidebar />
           </aside>
 
           <main className="flex-1">
-            {children}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={pathname}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="w-full"
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>
     </div>
   )
-} 
+}
