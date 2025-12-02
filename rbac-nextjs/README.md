@@ -113,14 +113,31 @@ CREATE POLICY "Enable insert access for authenticated users" ON user_roles FOR I
 CREATE POLICY "Enable delete access for authenticated users" ON user_roles FOR DELETE USING (auth.role() = 'authenticated');
 ```
 
-### 5. Create a Test User
+### 5. Apply Security Upgrades (Recommended)
+
+For production deployments, apply the security upgrades in `secure_schema.sql` to enhance database security:
+
+1. This upgrade includes:
+   - An `is_admin()` function to check admin privileges
+   - Secure Row Level Security (RLS) policies limiting write access to admins only
+   - Removal of insecure policies that allowed any authenticated user to modify data
+
+2. Run the security upgrade script in your Supabase SQL Editor:
+   - Open `secure_schema.sql` from the project root
+   - Copy and execute the entire script in your Supabase SQL Editor
+
+3. Create an 'Admin' role and assign it to users who should have administrative privileges:
+   - First create the 'Admin' role in the application
+   - Then assign this role to specific users via the user_roles table
+
+### 6. Create a Test User
 
 1. Go to your Supabase dashboard
 2. Navigate to Authentication > Users
 3. Click "Add User" and create a test account
 4. Note down the email and password for testing
 
-### 6. Run the Development Server
+### 7. Run the Development Server
 
 ```bash
 npm run dev

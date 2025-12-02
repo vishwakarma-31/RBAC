@@ -1,47 +1,34 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, Key, Link as LinkIcon } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
 
-export default function DashboardPage() {
-  const [stats, setStats] = useState({
-    permissions: 0,
-    roles: 0,
-    rolePermissions: 0,
-  })
+async function getStats() {
+  const supabase = await createClient()
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        // Fetch permissions count
-        const { count: permissionsCount } = await supabase
-          .from('permissions')
-          .select('*', { count: 'exact', head: true })
+  // Fetch permissions count
+  const { count: permissionsCount } = await supabase
+    .from('permissions')
+    .select('*', { count: 'exact', head: true })
 
-        // Fetch roles count
-        const { count: rolesCount } = await supabase
-          .from('roles')
-          .select('*', { count: 'exact', head: true })
+  // Fetch roles count
+  const { count: rolesCount } = await supabase
+    .from('roles')
+    .select('*', { count: 'exact', head: true })
 
-        // Fetch role permissions count
-        const { count: rolePermissionsCount } = await supabase
-          .from('role_permissions')
-          .select('*', { count: 'exact', head: true })
+  // Fetch role permissions count
+  const { count: rolePermissionsCount } = await supabase
+    .from('role_permissions')
+    .select('*', { count: 'exact', head: true })
 
-        setStats({
-          permissions: permissionsCount || 0,
-          roles: rolesCount || 0,
-          rolePermissions: rolePermissionsCount || 0,
-        })
-      } catch (error) {
-        console.error('Error fetching stats:', error)
-      }
-    }
+  return {
+    permissions: permissionsCount || 0,
+    roles: rolesCount || 0,
+    rolePermissions: rolePermissionsCount || 0,
+  }
+}
 
-    fetchStats()
-  }, [])
+export default async function DashboardPage() {
+  const stats = await getStats()
 
   return (
     <div>
