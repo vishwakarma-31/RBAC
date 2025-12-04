@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,11 @@ export function PermissionsClient({
   })
   const router = useRouter()
   const supabase = createClient()
+
+  // Add this effect to synchronize state with props
+  useEffect(() => {
+    setPermissions(initialPermissions)
+  }, [initialPermissions])
 
   const refreshData = async () => {
     // In a real implementation, this would fetch fresh data from the server

@@ -3,14 +3,14 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Shield, Users, Key } from 'lucide-react'
+import { Users, Key, LayoutDashboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   {
     title: 'Dashboard',
     href: '/dashboard',
-    icon: Shield,
+    icon: LayoutDashboard,
   },
   {
     title: 'Permissions',
@@ -28,32 +28,35 @@ export function Sidebar() {
   const pathname = usePathname()
 
   return (
-    <nav className="space-y-1">
-      {navItems.map((item, index) => {
+    <nav className="space-y-2 py-4">
+      {navItems.map((item) => {
         const Icon = item.icon
         const isActive = pathname === item.href
         
         return (
-          <motion.div
+          <Link
             key={item.href}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.1 }}
-            whileHover={{ x: 4 }}
+            href={item.href}
+            className={cn(
+              'group flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 relative overflow-hidden',
+              isActive
+                ? 'text-primary-foreground'
+                : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+            )}
           >
-            <Link
-              href={item.href}
-              className={cn(
-                'flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200',
-                isActive
-                  ? 'bg-primary/10 text-primary border-r-2 border-primary shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted/50'
-              )}
-            >
-              <Icon className="h-5 w-5 mr-3" />
+            {isActive && (
+              <motion.div
+                layoutId="activeNav"
+                className="absolute inset-0 bg-primary z-0"
+                initial={false}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              />
+            )}
+            <span className="relative z-10 flex items-center">
+              <Icon className={cn("h-5 w-5 mr-3 transition-colors", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-foreground")} />
               {item.title}
-            </Link>
-          </motion.div>
+            </span>
+          </Link>
         )
       })}
     </nav>

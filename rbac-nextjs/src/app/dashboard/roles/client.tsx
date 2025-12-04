@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Button, type ButtonProps } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge, type BadgeProps } from '@/components/ui/badge'
+import { Badge } from '@/components/ui/badge'
 import { Plus, Edit, Trash2, Save, X, Link as LinkIcon } from 'lucide-react'
 import type { Role, Permission } from '@/types/rbac'
 import { toast } from 'sonner'
@@ -45,6 +45,11 @@ export function RolesClient({
   })
   const router = useRouter()
   const supabase = createClient()
+
+  // Add this effect to synchronize state with props
+  useEffect(() => {
+    setRoles(initialRoles)
+  }, [initialRoles])
 
   const refreshData = async () => {
     // In a real implementation, this would fetch fresh data from the server
@@ -165,10 +170,6 @@ export function RolesClient({
     return role?.role_permissions || []
   }
 
-  const getPermissionById = (permissionId: string) => {
-    return permissions.find(p => p.id === permissionId)
-  }
-
   return (
     <div>
       <ConfirmDialog
@@ -240,7 +241,7 @@ export function RolesClient({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ delay: index * 0.1 }}
-              whileHover={{ scale: 1.01 }}
+              whileHover={{ scale: 1.05 }}
             >
               <Card>
                 <CardContent className="p-6">

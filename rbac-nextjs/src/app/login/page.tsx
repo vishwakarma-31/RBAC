@@ -2,22 +2,38 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+
+let supabase: ReturnType<typeof createClient> | null = null;
+try {
+  supabase = createClient();
+} catch (error) {
+  console.error('Failed to create Supabase client:', error);
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [needsConfirmation, setNeedsConfirmation] = useState(false)
   const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Check if Supabase client is available
+    if (!supabase) {
+      setError('Authentication service is not available. Please check your configuration.')
+      return
+    }
+    
     setLoading(true)
     setError('')
+    setNeedsConfirmation(false)
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
@@ -26,13 +42,59 @@ export default function LoginPage() {
       })
 
       if (error) {
-        setError(error.message)
+        // Handle specific error cases
+        if (error.message.includes('Email not confirmed')) {
+          setNeedsConfirmation(true)
+          setError('Please confirm your email address before signing in. Check your inbox for the confirmation email.')
+        } else {
+          setError(error.message)
+        }
+        console.error('Supabase login error:', error)
       } else {
         router.push('/dashboard')
       }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error) {
-      setError('An unexpected error occurred')
+    } catch (err) {
+      console.error('Login error:', err)
+      // Handle network errors specifically
+      if (err instanceof Error && (err.name === 'AuthRetryableFetchError' || err.message.includes('Failed to fetch'))) {
+        setError('Unable to connect to authentication service. Please check your internet connection and try again.')
+      } else {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResendConfirmation = async () => {
+    if (!supabase) {
+      setError('Authentication service is not available. Please check your configuration.')
+      return
+    }
+    
+    setLoading(true)
+    setError('')
+    
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+      })
+      
+      if (error) {
+        setError(error.message)
+      } else {
+        setError('')
+        setNeedsConfirmation(false)
+        alert('Confirmation email resent! Please check your inbox.')
+      }
+    } catch (err) {
+      // Handle network errors specifically
+      if (err instanceof Error && (err.name === 'AuthRetryableFetchError' || err.message.includes('Failed to fetch'))) {
+        setError('Unable to connect to authentication service. Please check your internet connection and try again.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to resend confirmation email')
+      }
     } finally {
       setLoading(false)
     }
@@ -92,14 +154,29 @@ export default function LoginPage() {
                 placeholder="••••••••"
               />
             </div>
-            {error && (
+            
+            {(error || needsConfirmation) && (
               <div className="text-red-600 text-sm bg-red-50/50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200/30 dark:border-red-800/30 backdrop-blur-sm shadow-inner">
                 {error}
+                {needsConfirmation && (
+                  <div className="mt-2">
+                    <Button 
+                      type="button" 
+                      variant="link" 
+                      onClick={handleResendConfirmation}
+                      disabled={loading}
+                      className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 p-0 h-auto font-normal"
+                    >
+                      {loading ? 'Sending...' : 'Resend confirmation email'}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
+            
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || !supabase}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition duration-300 ease-in-out transform hover:-translate-y-0.5 shadow-lg hover:shadow-xl"
             >
               {loading ? (
@@ -110,7 +187,7 @@ export default function LoginPage() {
                   </svg>
                   Signing in...
                 </span>
-              ) : 'Sign In'}
+              ) : !supabase ? 'Service Unavailable' : 'Sign In'}
             </Button>
           </form>
           

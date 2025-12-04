@@ -9,6 +9,12 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
+  // Check if environment variables are properly configured
+  if (!envConfig.NEXT_PUBLIC_SUPABASE_URL || !envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    console.warn('Supabase environment variables are not configured. Skipping session update.')
+    return response
+  }
+
   const supabase = createServerClient(
     envConfig.NEXT_PUBLIC_SUPABASE_URL,
     envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -41,6 +47,12 @@ export async function updateSession(request: NextRequest) {
 
   // Refresh session if needed
   const { data: { user } } = await supabase.auth.getUser()
+
+  // Handle callback URLs for authentication
+  if (request.nextUrl.pathname.startsWith('/auth/callback')) {
+    // Redirect to dashboard after successful authentication
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
 
   // Protect dashboard routes - only allow authenticated users
   if (request.nextUrl.pathname.startsWith('/dashboard') && !user) {

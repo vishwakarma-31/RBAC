@@ -1,35 +1,59 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, Key, Link as LinkIcon } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
 import { motion } from 'framer-motion'
+import { createClient } from '@/lib/supabase/client'
 
-async function getStats() {
-  const supabase = await createClient()
+const supabase = createClient()
 
-  // Fetch permissions count
-  const { count: permissionsCount } = await supabase
-    .from('permissions')
-    .select('*', { count: 'exact', head: true })
-
-  // Fetch roles count
-  const { count: rolesCount } = await supabase
-    .from('roles')
-    .select('*', { count: 'exact', head: true })
-
-  // Fetch role permissions count
-  const { count: rolePermissionsCount } = await supabase
-    .from('role_permissions')
-    .select('*', { count: 'exact', head: true })
-
-  return {
-    permissions: permissionsCount || 0,
-    roles: rolesCount || 0,
-    rolePermissions: rolePermissionsCount || 0,
-  }
+interface Stats {
+  permissions: number
+  roles: number
+  rolePermissions: number
 }
 
-export default async function DashboardPage() {
-  const stats = await getStats()
+export default function DashboardPage() {
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // Fetch permissions count
+        const { count: permissionsCount } = await supabase
+          .from('permissions')
+          .select('*', { count: 'exact', head: true })
+
+        // Fetch roles count
+        const { count: rolesCount } = await supabase
+          .from('roles')
+          .select('*', { count: 'exact', head: true })
+
+        // Fetch role permissions count
+        const { count: rolePermissionsCount } = await supabase
+          .from('role_permissions')
+          .select('*', { count: 'exact', head: true })
+
+        setStats({
+          permissions: permissionsCount || 0,
+          roles: rolesCount || 0,
+          rolePermissions: rolePermissionsCount || 0,
+        })
+      } catch (error) {
+        console.error('Error fetching stats:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStats()
+  }, [])
+
+  if (loading) {
+    return <div>Loading...</div>
+  }
 
   return (
     <div>
@@ -40,72 +64,74 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <motion.div 
-        className="grid grid-cols-1 md:grid-cols-3 gap-6"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <motion.div
+      {stats && (
+        <motion.div 
+          className="grid grid-cols-1 md:grid-cols-3 gap-6"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          whileHover={{ y: -5 }}
+          transition={{ delay: 0.2 }}
         >
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Permissions</CardTitle>
-              <Key className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.permissions}</div>
-              <p className="text-xs text-muted-foreground">
-                Individual permissions defined
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            whileHover={{ y: -5 }}
+          >
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Permissions</CardTitle>
+                <Key className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.permissions}</div>
+                <p className="text-xs text-muted-foreground">
+                  Individual permissions defined
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          whileHover={{ y: -5 }}
-        >
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Roles</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.roles}</div>
-              <p className="text-xs text-muted-foreground">
-                User roles created
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            whileHover={{ y: -5 }}
+          >
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Roles</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.roles}</div>
+                <p className="text-xs text-muted-foreground">
+                  User roles created
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          whileHover={{ y: -5 }}
-        >
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Role-Permission Links</CardTitle>
-              <LinkIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.rolePermissions}</div>
-              <p className="text-xs text-muted-foreground">
-                Permissions assigned to roles
-              </p>
-            </CardContent>
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            whileHover={{ y: -5 }}
+          >
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Role-Permission Links</CardTitle>
+                <LinkIcon className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.rolePermissions}</div>
+                <p className="text-xs text-muted-foreground">
+                  Permissions assigned to roles
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
         </motion.div>
-      </motion.div>
+      )}
 
       <div className="mt-8">
         <Card>
@@ -147,4 +173,4 @@ export default async function DashboardPage() {
       </div>
     </div>
   )
-} 
+}

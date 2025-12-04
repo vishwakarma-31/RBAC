@@ -1,0 +1,13 @@
+{
+	"servers": {
+		"supabase": {
+			"type": "http",
+			"url": "https://mcp.supabase.com/mcp?project_ref=orgosechxsdflwbmeoxj"
+		},
+		"my-mcp-server-087ba098": {
+			"url": "http://localhost:3000",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}

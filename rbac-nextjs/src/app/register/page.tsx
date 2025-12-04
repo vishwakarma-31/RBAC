@@ -2,11 +2,18 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
+
+let supabase: ReturnType<typeof createClient> | null = null;
+try {
+  supabase = createClient();
+} catch (error) {
+  console.error('Failed to create Supabase client:', error);
+}
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('')
@@ -14,6 +21,8 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+  const [resending, setResending] = useState(false)
   const router = useRouter()
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -25,8 +34,15 @@ export default function RegisterPage() {
       return
     }
     
+    // Check if Supabase client is available
+    if (!supabase) {
+      setError('Authentication service is not available. Please check your configuration.')
+      return
+    }
+    
     setLoading(true)
     setError('')
+    setSuccess(false)
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -36,16 +52,57 @@ export default function RegisterPage() {
 
       if (error) {
         setError(error.message)
+        console.error('Supabase signup error:', error)
       } else {
+        setSuccess(true)
         toast.success('Account created successfully!', {
-          description: 'Please check your email to confirm your account.'
+          description: 'Please check your email to confirm your account before signing in.'
         })
-        router.push('/login')
       }
-    } catch (error) {
-      setError('An unexpected error occurred')
+    } catch (err) {
+      console.error('Registration error:', err)
+      // Handle network errors specifically
+      if (err instanceof Error && (err.name === 'AuthRetryableFetchError' || err.message.includes('Failed to fetch'))) {
+        setError('Unable to connect to authentication service. Please check your internet connection and try again.')
+      } else {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResendConfirmation = async () => {
+    if (!supabase) {
+      setError('Authentication service is not available. Please check your configuration.')
+      return
+    }
+    
+    setResending(true)
+    setError('')
+    
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+      })
+      
+      if (error) {
+        setError(error.message)
+      } else {
+        toast.success('Confirmation email sent!', {
+          description: 'Please check your inbox and spam folder for the confirmation email.'
+        })
+      }
+    } catch (err) {
+      // Handle network errors specifically
+      if (err instanceof Error && (err.name === 'AuthRetryableFetchError' || err.message.includes('Failed to fetch'))) {
+        setError('Unable to connect to authentication service. Please check your internet connection and try again.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to resend confirmation email')
+      }
+    } finally {
+      setResending(false)
     }
   }
 
@@ -117,14 +174,50 @@ export default function RegisterPage() {
                 placeholder="••••••••"
               />
             </div>
+            
             {error && (
               <div className="text-red-600 text-sm bg-red-50/50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200/30 dark:border-red-800/30 backdrop-blur-sm shadow-inner">
                 {error}
               </div>
             )}
+            
+            {success && (
+              <div className="text-green-600 text-sm bg-green-50/50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200/30 dark:border-green-800/30 backdrop-blur-sm shadow-inner">
+                <p>Account created successfully!</p>
+                <p className="mt-1">A confirmation email has been sent to <span className="font-medium">{email}</span>.</p>
+                <p className="mt-2">Please check your inbox and spam folder.</p>
+                <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={handleResendConfirmation}
+                    disabled={resending}
+                    className="text-sm"
+                  >
+                    {resending ? 'Sending...' : 'Resend Email'}
+                  </Button>
+                  <Button 
+                    type="button" 
+                    onClick={() => router.push('/login')}
+                    className="text-sm"
+                  >
+                    Go to Sign In
+                  </Button>
+                </div>
+                <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  <p>Didn&apos;t receive the email?</p>
+                  <ul className="list-disc pl-5 mt-1 space-y-1">
+                    <li>Check your spam/junk folder</li>
+                    <li>Verify the email address is correct</li>
+                    <li>Try resending the confirmation email</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+            
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || !supabase}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition duration-300 ease-in-out transform hover:-translate-y-0.5 shadow-lg hover:shadow-xl"
             >
               {loading ? (
@@ -135,7 +228,7 @@ export default function RegisterPage() {
                   </svg>
                   Creating Account...
                 </span>
-              ) : 'Create Account'}
+              ) : !supabase ? 'Service Unavailable' : 'Create Account'}
             </Button>
           </form>
           
