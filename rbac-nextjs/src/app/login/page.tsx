@@ -7,12 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
-let supabase: ReturnType<typeof createClient> | null = null;
-try {
-  supabase = createClient();
-} catch (error) {
-  console.error('Failed to create Supabase client:', error);
-}
+const supabase = createClient();
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -24,12 +19,6 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Check if Supabase client is available
-    if (!supabase) {
-      setError('Authentication service is not available. Please check your configuration.')
-      return
-    }
     
     setLoading(true)
     setError('')
@@ -67,11 +56,6 @@ export default function LoginPage() {
   }
 
   const handleResendConfirmation = async () => {
-    if (!supabase) {
-      setError('Authentication service is not available. Please check your configuration.')
-      return
-    }
-    
     setLoading(true)
     setError('')
     
@@ -176,7 +160,7 @@ export default function LoginPage() {
             
             <Button
               type="submit"
-              disabled={loading || !supabase}
+              disabled={loading}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition duration-300 ease-in-out transform hover:-translate-y-0.5 shadow-lg hover:shadow-xl"
             >
               {loading ? (
@@ -187,7 +171,7 @@ export default function LoginPage() {
                   </svg>
                   Signing in...
                 </span>
-              ) : !supabase ? 'Service Unavailable' : 'Sign In'}
+              ) : 'Sign In'}
             </Button>
           </form>
           

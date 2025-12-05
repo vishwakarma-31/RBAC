@@ -4,5 +4,5 @@ import { getRolesData } from './data'
 export default async function RolesPage() {
   const { roles, permissions } = await getRolesData()
 
-  return <RolesClient initialRoles={roles} initialPermissions={permissions} />
-} 
+  return <RolesClient initialRoles={roles} allPermissions={permissions} />
+}

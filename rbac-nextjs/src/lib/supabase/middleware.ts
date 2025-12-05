@@ -3,17 +3,17 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { envConfig } from '../env'
 
 export async function updateSession(request: NextRequest) {
+  // Check if environment variables are properly configured
+  if (!envConfig.NEXT_PUBLIC_SUPABASE_URL || !envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    // SECURITY FIX: Fail closed instead of open
+    return new NextResponse('Service Configuration Error: Missing Environment Variables', { status: 500 });
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
-
-  // Check if environment variables are properly configured
-  if (!envConfig.NEXT_PUBLIC_SUPABASE_URL || !envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    console.warn('Supabase environment variables are not configured. Skipping session update.')
-    return response
-  }
 
   const supabase = createServerClient(
     envConfig.NEXT_PUBLIC_SUPABASE_URL,

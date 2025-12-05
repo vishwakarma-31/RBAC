@@ -7,7 +7,7 @@ BEGIN
   SELECT EXISTS (
     SELECT 1 FROM public.user_roles ur
     JOIN public.roles r ON ur.role_id = r.id
-    WHERE ur.user_id = auth.uid() AND r.name = 'Admin'
+    WHERE ur.user_id = auth.uid() AND r.name ILIKE 'admin' -- Case insensitive check
   ) INTO is_admin;
   RETURN COALESCE(is_admin, false);
 END;
@@ -68,3 +68,6 @@ ALTER TABLE permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE role_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+
+-- Refresh PostgREST schema cache
+NOTIFY pgrst, 'reload config';

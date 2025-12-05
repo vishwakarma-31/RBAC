@@ -9,9 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Plus, Edit, Trash2, Save, X, Link as LinkIcon } from 'lucide-react'
 import type { Role, Permission } from '@/types/rbac'
-import { toast } from 'sonner'
+import { useToast } from '@/components/ui/use-toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 
 interface RoleWithPermissions extends Role {
   role_permissions: {
@@ -20,31 +21,33 @@ interface RoleWithPermissions extends Role {
       id: string
       name: string
       description: string | null
+      created_at: string
     }
   }[]
 }
 
 export function RolesClient({ 
-  initialRoles, 
-  initialPermissions 
+  initialRoles,
+  allPermissions 
 }: { 
   initialRoles: RoleWithPermissions[]
-  initialPermissions: Permission[]
+  allPermissions: Permission[]
 }) {
   const [roles, setRoles] = useState<RoleWithPermissions[]>(initialRoles)
-  const [permissions] = useState<Permission[]>(initialPermissions)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [newRole, setNewRole] = useState({ name: '' })
   const [showForm, setShowForm] = useState(false)
-  const [selectedRole, setSelectedRole] = useState<string | null>(null)
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
     title: '',
     description: '',
     onConfirm: () => {}
   })
+  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({})
+  const [linkingStates, setLinkingStates] = useState<Record<string, boolean>>({})
   const router = useRouter()
   const supabase = createClient()
+  const { toast } = useToast()
 
   // Add this effect to synchronize state with props
   useEffect(() => {
@@ -55,32 +58,42 @@ export function RolesClient({
     // In a real implementation, this would fetch fresh data from the server
     // For now, we'll just reset the form states
     setEditingId(null)
-    setSelectedRole(null)
   }
 
-  const handleCreateRole = async () => {
+  const handleCreate = async () => {
     if (!newRole.name.trim()) return
 
     try {
+      setLoadingStates(prev => ({ ...prev, create: true }))
       const { error } = await supabase
         .from('roles')
         .insert([newRole])
 
       if (error) throw error
 
-      toast.success('Role created successfully')
+      toast({
+        title: "Success",
+        description: "Role created successfully",
+      })
       setNewRole({ name: '' })
       setShowForm(false)
       
       // Refresh the page to get updated data
       router.refresh()
     } catch (error) {
-      toast.error('Error creating role: ' + (error as Error).message)
+      toast({
+        title: "Error",
+        description: "Error creating role: " + (error as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates(prev => ({ ...prev, create: false }))
     }
   }
 
-  const handleUpdateRole = async (id: string, updates: Partial<Role>) => {
+  const handleUpdate = async (id: string, updates: Partial<Role>) => {
     try {
+      setLoadingStates(prev => ({ ...prev, [id]: true }))
       const { error } = await supabase
         .from('roles')
         .update(updates)
@@ -88,28 +101,35 @@ export function RolesClient({
 
       if (error) throw error
 
-      toast.success('Role updated successfully')
+      toast({
+        title: "Success",
+        description: "Role updated successfully",
+      })
       setEditingId(null)
       refreshData()
     } catch (error) {
-      toast.error('Error updating role: ' + (error as Error).message)
+      toast({
+        title: "Error",
+        description: "Error updating role: " + (error as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates(prev => {
+        const newState = { ...prev }
+        delete newState[id]
+        return newState
+      })
     }
   }
 
-  const handleDeleteRole = async (id: string) => {
+  const handleDelete = async (id: string) => {
     setConfirmDialog({
       open: true,
       title: 'Delete Role',
-      description: 'Are you sure you want to delete this role? This will also remove all permission assignments.',
+      description: 'Are you sure you want to delete this role? This action cannot be undone.',
       onConfirm: async () => {
         try {
-          // Delete role permissions first
-          await supabase
-            .from('role_permissions')
-            .delete()
-            .eq('role_id', id)
-
-          // Delete the role
+          setLoadingStates(prev => ({ ...prev, [`delete-${id}`]: true }))
           const { error } = await supabase
             .from('roles')
             .delete()
@@ -117,57 +137,86 @@ export function RolesClient({
 
           if (error) throw error
 
-          toast.success('Role deleted successfully')
+          toast({
+            title: "Success",
+            description: "Role deleted successfully",
+          })
           refreshData()
           
           // Refresh the page to get updated data
           router.refresh()
         } catch (error) {
-          toast.error('Error deleting role: ' + (error as Error).message)
+          toast({
+            title: "Error",
+            description: "Error deleting role: " + (error as Error).message,
+            variant: "destructive",
+          })
+        } finally {
+          setLoadingStates(prev => {
+            const newState = { ...prev }
+            delete newState[`delete-${id}`]
+            return newState
+          })
         }
       }
     })
   }
 
-  const handleAssignPermission = async (roleId: string, permissionId: string) => {
+  const handleLinkPermission = async (roleId: string, permissionId: string) => {
     try {
-      const { error } = await supabase
-        .from('role_permissions')
-        .insert([{ role_id: roleId, permission_id: permissionId }])
-
-      if (error) throw error
-
-      toast.success('Permission assigned successfully')
+      setLinkingStates(prev => ({ ...prev, [`${roleId}-${permissionId}`]: true }))
       
-      // Refresh the page to get updated data
-      router.refresh()
-    } catch (error) {
-      toast.error('Error assigning permission: ' + (error as Error).message)
-    }
-  }
-
-  const handleRemovePermission = async (roleId: string, permissionId: string) => {
-    try {
-      const { error } = await supabase
+      // Check if the link already exists
+      const { data: existingLinks, error: fetchError } = await supabase
         .from('role_permissions')
-        .delete()
+        .select('*')
         .eq('role_id', roleId)
         .eq('permission_id', permissionId)
+        .limit(1)
 
-      if (error) throw error
+      if (fetchError) throw fetchError
 
-      toast.success('Permission removed successfully')
+      let successMessage = ''
+      if (existingLinks && existingLinks.length > 0) {
+        // Unlink the permission
+        const { error } = await supabase
+          .from('role_permissions')
+          .delete()
+          .eq('role_id', roleId)
+          .eq('permission_id', permissionId)
+
+        if (error) throw error
+        successMessage = 'Permission unlinked successfully'
+      } else {
+        // Link the permission
+        const { error } = await supabase
+          .from('role_permissions')
+          .insert([{ role_id: roleId, permission_id: permissionId }])
+
+        if (error) throw error
+        successMessage = 'Permission linked successfully'
+      }
+
+      toast({
+        title: "Success",
+        description: successMessage,
+      })
       
       // Refresh the page to get updated data
       router.refresh()
     } catch (error) {
-      toast.error('Error removing permission: ' + (error as Error).message)
+      toast({
+        title: "Error",
+        description: "Error linking/unlinking permission: " + (error as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setLinkingStates(prev => {
+        const newState = { ...prev }
+        delete newState[`${roleId}-${permissionId}`]
+        return newState
+      })
     }
-  }
-
-  const getRolePermissions = (roleId: string) => {
-    const role = roles.find(r => r.id === roleId)
-    return role?.role_permissions || []
   }
 
   return (
@@ -179,60 +228,83 @@ export function RolesClient({
         description={confirmDialog.description}
         onConfirm={confirmDialog.onConfirm}
       />
-      <div className="flex justify-between items-center mb-8">
+      <motion.div 
+        className="flex justify-between items-center mb-8"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Roles</h1>
-          <p className="text-gray-600 mt-2">
-            Manage user roles and assign permissions
+          <h1 className="text-3xl font-bold text-foreground">Roles</h1>
+          <p className="text-muted-foreground mt-2">
+            Manage user roles and permission assignments
           </p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Role
-        </Button>
-      </div>
+        <motion.div
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Role
+          </Button>
+        </motion.div>
+      </motion.div>
 
-      {showForm && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Create New Role</CardTitle>
-            <CardDescription>
-              Add a new role to the system
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Role Name
-                </label>
-                <Input
-                  value={newRole.name}
-                  onChange={(e) => setNewRole(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g., Administrator"
-                />
-              </div>
-              <div className="flex space-x-2">
-                <Button onClick={handleCreateRole}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Create
-                </Button>
-                <Button variant="outline" onClick={() => setShowForm(false)}>
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <AnimatePresence>
+        {showForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>Create New Role</CardTitle>
+                <CardDescription>
+                  Add a new role to assign to users
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Role Name
+                    </label>
+                    <Input
+                      value={newRole.name}
+                      onChange={(e) => setNewRole(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g., editor"
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button onClick={handleCreate} disabled={loadingStates.create}>
+                        <Save className="h-4 w-4 mr-2" />
+                        Create
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button variant="outline" onClick={() => setShowForm(false)}>
+                        <X className="h-4 w-4 mr-2" />
+                        Cancel
+                      </Button>
+                    </motion.div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         <motion.div 
-          className="grid gap-6"
+          className="grid gap-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
+          transition={{ duration: 0.3, delay: 0.2 }}
         >
           {roles.map((role, index) => (
             <motion.div
@@ -241,14 +313,20 @@ export function RolesClient({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ delay: index * 0.1 }}
-              whileHover={{ scale: 1.05 }}
+              whileHover={{ scale: 1.01 }}
+              layout
             >
-              <Card>
+              <Card className="h-full">
                 <CardContent className="p-6">
                   {editingId === role.id ? (
-                    <div className="space-y-4">
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-4"
+                    >
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground mb-1">
                           Role Name
                         </label>
                         <Input
@@ -260,25 +338,34 @@ export function RolesClient({
                         />
                       </div>
                       <div className="flex space-x-2">
-                        <Button onClick={() => handleUpdateRole(role.id, role)}>
-                          <Save className="h-4 w-4 mr-2" />
-                          Save
-                        </Button>
-                        <Button variant="outline" onClick={() => setEditingId(null)}>
-                          <X className="h-4 w-4 mr-2" />
-                          Cancel
-                        </Button>
+                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                          <Button onClick={() => handleUpdate(role.id, role)} disabled={!!loadingStates[role.id]}>
+                            <Save className="h-4 w-4 mr-2" />
+                            Save
+                          </Button>
+                        </motion.div>
+                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                          <Button variant="outline" onClick={() => setEditingId(null)}>
+                            <X className="h-4 w-4 mr-2" />
+                            Cancel
+                          </Button>
+                        </motion.div>
                       </div>
-                    </div>
+                    </motion.div>
                   ) : (
-                    <div>
-                      <div className="flex justify-between items-start mb-4">
+                    <motion.div 
+                      className="space-y-4"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: index * 0.1 + 0.2 }}
+                    >
+                      <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-2">
                             <h3 className="text-lg font-semibold">{role.name}</h3>
                             <Badge variant="secondary">Role</Badge>
                           </div>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-muted-foreground">
                             Created: {new Date(role.created_at).toLocaleDateString()}
                           </p>
                         </div>
@@ -297,7 +384,8 @@ export function RolesClient({
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleDeleteRole(role.id)}
+                              onClick={() => handleDelete(role.id)}
+                              disabled={!!loadingStates[`delete-${role.id}`]}
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete
@@ -306,85 +394,46 @@ export function RolesClient({
                         </div>
                       </div>
 
-                      <div className="border-t pt-4">
-                        <div className="flex justify-between items-center mb-3">
-                          <h4 className="font-medium">Assigned Permissions</h4>
-                          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setSelectedRole(selectedRole === role.id ? null : role.id)}
-                            >
-                              <LinkIcon className="h-4 w-4 mr-2" />
-                              {selectedRole === role.id ? 'Hide' : 'Manage'} Permissions
-                            </Button>
-                          </motion.div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          {getRolePermissions(role.id).map((rp) => {
-                            const permission = rp.permissions
-                            return permission ? (
-                              <motion.div
-                                key={rp.permission_id}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.2 }}
-                              >
-                                <Badge variant="outline">
-                                  {permission.name}
-                                  <button
-                                    onClick={() => handleRemovePermission(role.id, rp.permission_id)}
-                                    className="ml-2 text-red-500 hover:text-red-700"
+                      <div className="pt-4 border-t">
+                        <h4 className="font-medium mb-3 flex items-center">
+                          <LinkIcon className="h-4 w-4 mr-2" />
+                          Linked Permissions
+                        </h4>
+                        {allPermissions && allPermissions.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {allPermissions.map((permission) => {
+                              const isLinked = role.role_permissions.some(rp => rp.permission_id === permission.id)
+                              return (
+                                <motion.div
+                                  key={`${role.id}-${permission.id}`}
+                                  whileHover={{ scale: 1.02 }}
+                                  whileTap={{ scale: 0.98 }}
+                                >
+                                  <Button
+                                    variant={isLinked ? "default" : "outline"}
+                                    size="sm"
+                                    className="w-full justify-start"
+                                    onClick={() => handleLinkPermission(role.id, permission.id)}
+                                    disabled={!!linkingStates[`${role.id}-${permission.id}`]}
                                   >
-                                    ×
-                                  </button>
-                                </Badge>
-                              </motion.div>
-                            ) : null
-                          })}
-                          {getRolePermissions(role.id).length === 0 && (
-                            <p className="text-sm text-gray-500">No permissions assigned</p>
-                          )}
-                        </div>
-
-                        {selectedRole === role.id && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            transition={{ duration: 0.3 }}
-                            className="border rounded-lg p-4 bg-gray-50"
-                          >
-                            <h5 className="font-medium mb-3">Available Permissions</h5>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                              {permissions.map((permission) => {
-                                const isAssigned = getRolePermissions(role.id).some(
-                                  rp => rp.permission_id === permission.id
-                                )
-                                return (
-                                  <motion.div
-                                    key={permission.id}
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                  >
-                                    <Button
-                                      variant={isAssigned ? "default" : "outline"}
-                                      size="sm"
-                                      disabled={isAssigned}
-                                      onClick={() => handleAssignPermission(role.id, permission.id)}
-                                      className="justify-start w-full"
-                                    >
-                                      {permission.name}
-                                    </Button>
-                                  </motion.div>
-                                )
-                              })}
-                            </div>
-                          </motion.div>
+                                    {linkingStates[`${role.id}-${permission.id}`] ? (
+                                      <LoadingSpinner size="sm" className="mr-2" />
+                                    ) : (
+                                      <div className={`w-2 h-2 rounded-full mr-2 ${isLinked ? 'bg-primary-foreground' : 'bg-muted-foreground'}`} />
+                                    )}
+                                    <span className="truncate">{permission.name}</span>
+                                  </Button>
+                                </motion.div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-sm">
+                            {allPermissions ? 'No permissions available. Create some permissions first.' : 'Loading permissions...'}
+                          </p>
                         )}
                       </div>
-                    </div>
+                    </motion.div>
                   )}
                 </CardContent>
               </Card>
@@ -393,12 +442,18 @@ export function RolesClient({
         </motion.div>
       </AnimatePresence>
 
-      {roles.length === 0 && (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-gray-500">No roles found. Create your first role to get started.</p>
-          </CardContent>
-        </Card>
+      {roles.length === 0 && !showForm && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">No roles found. Create your first role to get started.</p>
+            </CardContent>
+          </Card>
+        </motion.div>
       )}
     </div>
   )

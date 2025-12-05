@@ -9,9 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Plus, Edit, Trash2, Save, X } from 'lucide-react'
 import type { Permission } from '@/types/rbac'
-import { toast } from 'sonner'
+import { useToast } from '@/components/ui/use-toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 
 export function PermissionsClient({ 
   initialPermissions 
@@ -28,8 +30,10 @@ export function PermissionsClient({
     description: '',
     onConfirm: () => {}
   })
+  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({})
   const router = useRouter()
   const supabase = createClient()
+  const { toast } = useToast()
 
   // Add this effect to synchronize state with props
   useEffect(() => {
@@ -46,25 +50,36 @@ export function PermissionsClient({
     if (!newPermission.name.trim()) return
 
     try {
+      setLoadingStates(prev => ({ ...prev, create: true }))
       const { error } = await supabase
         .from('permissions')
         .insert([newPermission])
 
       if (error) throw error
 
-      toast.success('Permission created successfully')
+      toast({
+        title: "Success",
+        description: "Permission created successfully",
+      })
       setNewPermission({ name: '', description: '' })
       setShowForm(false)
       
       // Refresh the page to get updated data
       router.refresh()
     } catch (error) {
-      toast.error('Error creating permission: ' + (error as Error).message)
+      toast({
+        title: "Error",
+        description: "Error creating permission: " + (error as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates(prev => ({ ...prev, create: false }))
     }
   }
 
   const handleUpdate = async (id: string, updates: Partial<Permission>) => {
     try {
+      setLoadingStates(prev => ({ ...prev, [id]: true }))
       const { error } = await supabase
         .from('permissions')
         .update(updates)
@@ -72,11 +87,24 @@ export function PermissionsClient({
 
       if (error) throw error
 
-      toast.success('Permission updated successfully')
+      toast({
+        title: "Success",
+        description: "Permission updated successfully",
+      })
       setEditingId(null)
       refreshData()
     } catch (error) {
-      toast.error('Error updating permission: ' + (error as Error).message)
+      toast({
+        title: "Error",
+        description: "Error updating permission: " + (error as Error).message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingStates(prev => {
+        const newState = { ...prev }
+        delete newState[id]
+        return newState
+      })
     }
   }
 
@@ -87,6 +115,7 @@ export function PermissionsClient({
       description: 'Are you sure you want to delete this permission?',
       onConfirm: async () => {
         try {
+          setLoadingStates(prev => ({ ...prev, [`delete-${id}`]: true }))
           const { error } = await supabase
             .from('permissions')
             .delete()
@@ -94,13 +123,26 @@ export function PermissionsClient({
 
           if (error) throw error
 
-          toast.success('Permission deleted successfully')
+          toast({
+            title: "Success",
+            description: "Permission deleted successfully",
+          })
           refreshData()
           
           // Refresh the page to get updated data
           router.refresh()
         } catch (error) {
-          toast.error('Error deleting permission: ' + (error as Error).message)
+          toast({
+            title: "Error",
+            description: "Error deleting permission: " + (error as Error).message,
+            variant: "destructive",
+          })
+        } finally {
+          setLoadingStates(prev => {
+            const newState = { ...prev }
+            delete newState[`delete-${id}`]
+            return newState
+          })
         }
       }
     })
@@ -115,70 +157,93 @@ export function PermissionsClient({
         description={confirmDialog.description}
         onConfirm={confirmDialog.onConfirm}
       />
-      <div className="flex justify-between items-center mb-8">
+      <motion.div 
+        className="flex justify-between items-center mb-8"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Permissions</h1>
-          <p className="text-gray-600 mt-2">
+          <h1 className="text-3xl font-bold text-foreground">Permissions</h1>
+          <p className="text-muted-foreground mt-2">
             Manage system permissions and access controls
           </p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Permission
-        </Button>
-      </div>
+        <motion.div
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Permission
+          </Button>
+        </motion.div>
+      </motion.div>
 
-      {showForm && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Create New Permission</CardTitle>
-            <CardDescription>
-              Add a new permission to the system
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Permission Name
-                </label>
-                <Input
-                  value={newPermission.name}
-                  onChange={(e) => setNewPermission(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g., can_edit_articles"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <Input
-                  value={newPermission.description}
-                  onChange={(e) => setNewPermission(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Brief description of the permission"
-                />
-              </div>
-              <div className="flex space-x-2">
-                <Button onClick={handleCreate}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Create
-                </Button>
-                <Button variant="outline" onClick={() => setShowForm(false)}>
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <AnimatePresence>
+        {showForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>Create New Permission</CardTitle>
+                <CardDescription>
+                  Add a new permission to the system
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Permission Name
+                    </label>
+                    <Input
+                      value={newPermission.name}
+                      onChange={(e) => setNewPermission(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g., can_edit_articles"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Description
+                    </label>
+                    <Input
+                      value={newPermission.description}
+                      onChange={(e) => setNewPermission(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Brief description of the permission"
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button onClick={handleCreate} disabled={loadingStates.create}>
+                        <Save className="h-4 w-4 mr-2" />
+                        Create
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button variant="outline" onClick={() => setShowForm(false)}>
+                        <X className="h-4 w-4 mr-2" />
+                        Cancel
+                      </Button>
+                    </motion.div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         <motion.div 
           className="grid gap-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
+          transition={{ duration: 0.3, delay: 0.2 }}
         >
           {permissions.map((permission, index) => (
             <motion.div
@@ -188,13 +253,19 @@ export function PermissionsClient({
               exit={{ opacity: 0, y: -20 }}
               transition={{ delay: index * 0.1 }}
               whileHover={{ scale: 1.01 }}
+              layout
             >
-              <Card>
+              <Card className="h-full">
                 <CardContent className="p-6">
                   {editingId === permission.id ? (
-                    <div className="space-y-4">
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-4"
+                    >
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground mb-1">
                           Permission Name
                         </label>
                         <Input
@@ -206,7 +277,7 @@ export function PermissionsClient({
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground mb-1">
                           Description
                         </label>
                         <Input
@@ -219,7 +290,7 @@ export function PermissionsClient({
                       </div>
                       <div className="flex space-x-2">
                         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                          <Button onClick={() => handleUpdate(permission.id, permission)}>
+                          <Button onClick={() => handleUpdate(permission.id, permission)} disabled={!!loadingStates[permission.id]}>
                             <Save className="h-4 w-4 mr-2" />
                             Save
                           </Button>
@@ -231,18 +302,23 @@ export function PermissionsClient({
                           </Button>
                         </motion.div>
                       </div>
-                    </div>
+                    </motion.div>
                   ) : (
-                    <div className="flex justify-between items-start">
+                    <motion.div 
+                      className="flex justify-between items-start"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: index * 0.1 + 0.2 }}
+                    >
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-2">
                           <h3 className="text-lg font-semibold">{permission.name}</h3>
                           <Badge variant="secondary">Permission</Badge>
                         </div>
                         {permission.description && (
-                          <p className="text-gray-600">{permission.description}</p>
+                          <p className="text-muted-foreground">{permission.description}</p>
                         )}
-                        <p className="text-sm text-gray-500 mt-2">
+                        <p className="text-sm text-muted-foreground mt-2">
                           Created: {new Date(permission.created_at).toLocaleDateString()}
                         </p>
                       </div>
@@ -262,13 +338,14 @@ export function PermissionsClient({
                             variant="outline"
                             size="sm"
                             onClick={() => handleDelete(permission.id)}
+                            disabled={!!loadingStates[`delete-${permission.id}`]}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
                           </Button>
                         </motion.div>
                       </div>
-                    </div>
+                    </motion.div>
                   )}
                 </CardContent>
               </Card>
@@ -277,12 +354,18 @@ export function PermissionsClient({
         </motion.div>
       </AnimatePresence>
 
-      {permissions.length === 0 && (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-gray-500">No permissions found. Create your first permission to get started.</p>
-          </CardContent>
-        </Card>
+      {permissions.length === 0 && !showForm && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">No permissions found. Create your first permission to get started.</p>
+            </CardContent>
+          </Card>
+        </motion.div>
       )}
     </div>
   )

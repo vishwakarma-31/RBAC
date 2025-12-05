@@ -47,3 +47,6 @@ CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON public.role_permissio
 CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON public.role_permissions(permission_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON public.user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON public.user_roles(role_id);
+
+-- Refresh PostgREST schema cache
+NOTIFY pgrst, 'reload config';

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme/theme-provider";
-import { Toaster } from "@/components/ui/toast";
+import { ToastProvider, ToastViewport } from "@/components/ui/toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,8 +22,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster />
+          <ToastProvider>
+            {children}
+            <ToastViewport />
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -19,31 +19,7 @@ const env = {
 }
 
 function getEnvConfig() {
-  try {
-    const parsed = envSchema.parse(env);
-    
-    // Check if required environment variables are present
-    if (!parsed.NEXT_PUBLIC_SUPABASE_URL) {
-      console.warn('⚠️  NEXT_PUBLIC_SUPABASE_URL is not configured. Please check your .env.local file.')
-    }
-    
-    if (!parsed.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      console.warn('⚠️  NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured. Please check your .env.local file.')
-    }
-    
-    return parsed;
-  } catch (error) {
-    console.error('❌ Environment variable validation failed:')
-    console.error('Please ensure your .env.local file contains valid Supabase credentials.')
-    console.error('Refer to the README.md for setup instructions.')
-    
-    // Return a fallback configuration
-    return {
-      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
-    }
-  }
+  // Allow Zod to throw validation errors to prevent app startup with bad config
+  return envSchema.parse(env);
 }
-
 export const envConfig = getEnvConfig();
