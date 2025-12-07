@@ -17,6 +17,7 @@ async function testConnection() {
   
   try {
     // Test connection by querying the permissions table
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { data, error } = await supabase
       .from('permissions')
       .select('count()');
