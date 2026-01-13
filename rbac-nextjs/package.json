@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "setup:db": "node setup-database.js",
-    "test:db": "node test-db-connection.js"
+    "test:db": "node test-db-connection.js",
+    "vercel-build": "next build"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
