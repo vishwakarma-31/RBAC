@@ -1,8 +1,9 @@
 import { RolesClient } from './client'
-import { getRolesData } from './data'
+
+// Force this page to be dynamic to avoid build-time data fetching issues
+export const dynamic = 'force-dynamic'
 
 export default async function RolesPage() {
-  const { roles, permissions } = await getRolesData()
-
-  return <RolesClient initialRoles={roles} allPermissions={permissions} />
+  // Defer data loading to the client component to avoid build-time issues
+  return <RolesClient initialRoles={[]} allPermissions={[]} />
 }

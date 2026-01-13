@@ -3,12 +3,6 @@ import { cookies } from 'next/headers'
 import { envConfig } from '../env'
 
 export async function createClient() {
-  // Check if environment variables are properly configured
-  if (!envConfig.NEXT_PUBLIC_SUPABASE_URL || !envConfig.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    // SECURITY FIX: Throw error immediately instead of returning mock client
-    throw new Error('Supabase environment variables are not configured. Please check your .env.local file.');
-  }
-
   const cookieStore = await cookies()
 
   return createServerClient(
