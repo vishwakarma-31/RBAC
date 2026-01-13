@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation' // Import useRouter
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, Key, Link as LinkIcon } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -18,6 +19,7 @@ interface Stats {
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
+  const router = useRouter() // Initialize router
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -60,8 +62,8 @@ export default function DashboardPage() {
         transition={{ duration: 0.5 }}
         className="mb-8"
       >
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">
+        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+        <p className="text-muted-foreground mt-2">
           Manage your Role-Based Access Control system
         </p>
       </motion.div>
@@ -190,13 +192,13 @@ export default function DashboardPage() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="p-4 border rounded-lg cursor-pointer"
-                onClick={() => window.location.href = '/dashboard/permissions'}
+                onClick={() => router.push('/dashboard/permissions')} // Use router.push instead of window.location.href
               >
                 <h3 className="font-semibold mb-2">Create New Permission</h3>
-                <p className="text-sm text-gray-600 mb-3">
+                <p className="text-sm text-muted-foreground mb-3">
                   Add a new permission to your system
                 </p>
-                <a className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                <a className="text-primary hover:underline text-sm font-medium">
                   Go to Permissions →
                 </a>
               </motion.div>
@@ -204,13 +206,13 @@ export default function DashboardPage() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="p-4 border rounded-lg cursor-pointer"
-                onClick={() => window.location.href = '/dashboard/roles'}
+                onClick={() => router.push('/dashboard/roles')} // Use router.push instead of window.location.href
               >
                 <h3 className="font-semibold mb-2">Create New Role</h3>
-                <p className="text-sm text-gray-600 mb-3">
+                <p className="text-sm text-muted-foreground mb-3">
                   Create a new role and assign permissions
                 </p>
-                <a className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                <a className="text-primary hover:underline text-sm font-medium">
                   Go to Roles →
                 </a>
               </motion.div>
