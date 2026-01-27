@@ -1,0 +1,23 @@
+{
+  "name": "@rbac-platform/database",
+  "version": "1.0.0",
+  "description": "Database schema and migrations for Authorization Platform",
+  "scripts": {
+    "migrate:up": "node-pg-migrate up",
+    "migrate:down": "node-pg-migrate down",
+    "migrate:create": "node-pg-migrate create",
+    "seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "@types/uuid": "^10.0.0",
+    "dotenv": "^17.2.3",
+    "node-pg-migrate": "^6.2.2",
+    "pg": "^8.11.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/pg": "^8.6.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,154 @@
+version: '3.8'
+
+services:
+  database:
+    build:
+      context: ./infrastructure/database
+      dockerfile: Dockerfile
+    container_name: rbac-database
+    environment:
+      - POSTGRES_DB=rbac_platform
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres_password
+      - APP_USER_PASSWORD=authz_app_password
+      - SYSTEM_USER_PASSWORD=authz_system_password
+      - SEED_DATABASE=true
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/database/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./infrastructure/database/scripts:/docker-entrypoint-initdb.d/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rbac-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: rbac-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - rbac-network
+
+  authz-engine:
+    build:
+      context: ./services/authz-engine
+      dockerfile: Dockerfile
+    container_name: rbac-authz-engine
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://authz_app_user:authz_app_password@database:5432/rbac_platform
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=development_jwt_secret_key_here
+      - LOG_LEVEL=debug
+    ports:
+      - "3000:3000"
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - rbac-network
+
+  management-api:
+    build:
+      context: ./services/management-api
+      dockerfile: Dockerfile
+    container_name: rbac-management-api
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://authz_app_user:authz_app_password@database:5432/rbac_platform
+      - REDIS_URL=redis://redis:6379
+      - AUTHZ_ENGINE_URL=http://authz-engine:3000
+      - JWT_SECRET=development_jwt_secret_key_here
+      - LOG_LEVEL=debug
+    ports:
+      - "3001:3001"
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      authz-engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - rbac-network
+
+  audit-service:
+    build:
+      context: ./services/audit-service
+      dockerfile: Dockerfile
+    container_name: rbac-audit-service
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://authz_system_user:authz_system_password@database:5432/rbac_platform
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=development_jwt_secret_key_here
+      - LOG_LEVEL=debug
+    ports:
+      - "3002:3002"
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - rbac-network
+
+  admin-dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: rbac-admin-dashboard
+    environment:
+      - REACT_APP_API_BASE_URL=http://localhost:3001
+      - REACT_APP_AUTHZ_ENGINE_URL=http://localhost:3000
+    ports:
+      - "3003:80"
+    depends_on:
+      management-api:
+        condition: service_healthy
+      authz-engine:
+        condition: service_healthy
+    networks:
+      - rbac-network
+
+networks:
+  rbac-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
