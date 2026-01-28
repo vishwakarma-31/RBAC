@@ -1,0 +1,25 @@
+{
+  "name": "@rbac-platform/node-sdk",
+  "version": "1.0.0",
+  "description": "Node.js SDK for the RBAC Authorization Platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "rbac",
+    "authorization",
+    "sdk"
+  ],
+  "author": "Authorization Platform Team",
+  "license": "MIT"
+}

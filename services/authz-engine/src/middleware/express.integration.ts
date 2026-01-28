@@ -128,12 +128,13 @@ export function customAuthorization(options: AuthorizationMiddlewareOptions) {
 // Error handler for authorization failures
 export function authorizationErrorHandler(err: any, req: any, res: any, next: any) {
   if (err.name === 'AuthorizationError') {
-    return res.status(403).json({
+    res.status(403).json({
       error: 'Forbidden',
       message: err.message,
       reason: err.reason,
       explanation: err.explanation
     });
+    return;
   }
   next(err);
 }

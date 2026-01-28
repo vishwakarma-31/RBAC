@@ -128,8 +128,8 @@ dev: setup start logs
 # Production-like environment
 prod-up:
 	@echo "Starting production-like environment..."
-	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+	docker-compose -f docker-compose.prod.yml up -d
 
 prod-down:
 	@echo "Stopping production environment..."
-	docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+	docker-compose -f docker-compose.prod.yml down

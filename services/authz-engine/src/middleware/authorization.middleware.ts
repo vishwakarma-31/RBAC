@@ -47,28 +47,31 @@ export function createAuthorizationMiddleware(options: AuthorizationMiddlewareOp
         : options.tenantId;
 
       if (!tenantId) {
-        return res.status(400).json({
+        res.status(400).json({
           error: 'Missing tenant ID',
           message: 'Tenant ID is required for authorization'
         });
+        return;
       }
 
       // Extract principal ID
       const principalId = options.extractPrincipalId(req);
       if (!principalId) {
-        return res.status(401).json({
+        res.status(401).json({
           error: 'Unauthorized',
           message: 'Principal ID not found in request'
         });
+        return;
       }
 
       // Extract resource
       const resource = options.extractResource(req);
       if (!resource?.type || !resource?.id) {
-        return res.status(400).json({
+        res.status(400).json({
           error: 'Bad Request',
           message: 'Resource type and ID are required'
         });
+        return;
       }
 
       // Extract action (default to HTTP method mapping)
@@ -111,10 +114,11 @@ export function createAuthorizationMiddleware(options: AuthorizationMiddlewareOp
       // Handle denied requests
       if (!result.allowed) {
         if (options.unauthorizedHandler) {
-          return options.unauthorizedHandler(req, res, result);
+          options.unauthorizedHandler(req, res, result);
+          return;
         }
 
-        return res.status(403).json({
+        res.status(403).json({
           error: 'Forbidden',
           allowed: false,
           reason: result.reason,
@@ -131,7 +135,7 @@ export function createAuthorizationMiddleware(options: AuthorizationMiddlewareOp
 
     } catch (error) {
       console.error('Authorization middleware error:', error);
-      return res.status(500).json({
+      res.status(500).json({
         error: 'Authorization evaluation failed',
         message: (error as Error).message
       });
@@ -206,7 +210,7 @@ export function requireTenantAccess(tenantIdParam: string = 'tenantId') {
 
 // Default unauthorized handler
 export function defaultUnauthorizedHandler(req: any, res: any, result: any) {
-  return res.status(403).json({
+  res.status(403).json({
     error: 'Forbidden',
     allowed: false,
     reason: result.reason,

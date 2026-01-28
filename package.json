@@ -1,0 +1,21 @@
+{
+  "name": "rbac-platform",
+  "version": "1.0.0",
+  "description": "RBAC Authorization Platform",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "services/*",
+    "dashboard",
+    "infrastructure/database"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "start": "npm run start --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
