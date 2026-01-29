@@ -55,17 +55,35 @@ interface RoleConstraint {
 }
 
 import { Pool } from 'pg';
+import { AppConfig } from '../config';
+import globalConfig from '../config';
+import { TransactionManager } from '../db/TransactionManager';
+import { RedisCacheManager } from '../cache/RedisCacheManager';
+
+import { EventDrivenInvalidator } from '../cache/EventDrivenInvalidator';
 
 export class RBACHierarchyManager {
   private dbPool: Pool;
+  private invalidator: EventDrivenInvalidator;
   
-  constructor() {
+  constructor(appConfig?: AppConfig, private cacheManager?: RedisCacheManager) {
+    const config = appConfig || globalConfig;
+    
     this.dbPool = new Pool({
-      connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/rbac_platform',
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionString: config.database.connectionString,
+      max: config.database.maxConnections,
+      idleTimeoutMillis: config.database.idleTimeoutMs,
+      connectionTimeoutMillis: config.database.connectionTimeoutMs,
     });
+    
+    // Initialize the cache invalidator
+    if (cacheManager) {
+      this.invalidator = new EventDrivenInvalidator(cacheManager, this.dbPool);
+    } else {
+      // Create a default cache manager if not provided
+      const defaultCacheManager = new RedisCacheManager(config);
+      this.invalidator = new EventDrivenInvalidator(defaultCacheManager, this.dbPool);
+    }
   }
 
   /**
@@ -245,57 +263,71 @@ export class RBACHierarchyManager {
     grantedBy: string,
     tenantId: string
   ): Promise<void> {
-    // Verify role exists and belongs to the tenant
-    const roleQuery = {
-      text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
-      values: [roleId, tenantId]
-    };
-    const roleResult = await this.dbPool.query(roleQuery);
-    if (roleResult.rows.length === 0) {
-      throw new Error('Role not found or invalid tenant');
-    }
-
-    // Check role constraints
-    const constraintViolation = await this.checkRoleConstraintViolation(principalId, roleId, tenantId);
-    if (constraintViolation) {
-      throw new Error(`Role constraint violation: ${constraintViolation}`);
-    }
-
-    // Insert the principal-role assignment into the database
-    const insertQuery = {
-      text: `INSERT INTO principal_roles(principal_id, role_id, granted_by, granted_at, is_active)
-             VALUES($1, $2, $3, NOW(), true)
-             ON CONFLICT (principal_id, role_id) DO UPDATE SET
-               granted_by = EXCLUDED.granted_by,
-               granted_at = EXCLUDED.granted_at,
-               is_active = true`,
-      values: [principalId, roleId, grantedBy]
-    };
+    const transactionManager = new TransactionManager(this.dbPool);
     
-    await this.dbPool.query(insertQuery);
+    await transactionManager.executeInTransaction(async (client) => {
+      // Verify role exists and belongs to the tenant
+      const roleQuery = {
+        text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
+        values: [roleId, tenantId]
+      };
+      const roleResult = await client.query(roleQuery);
+      if (roleResult.rows.length === 0) {
+        throw new Error('Role not found or invalid tenant');
+      }
+
+      // Check role constraints
+      const constraintViolation = await this.checkRoleConstraintViolation(principalId, roleId, tenantId);
+      if (constraintViolation) {
+        throw new Error(`Role constraint violation: ${constraintViolation}`);
+      }
+
+      // Insert the principal-role assignment into the database
+      const insertQuery = {
+        text: `INSERT INTO principal_roles(principal_id, role_id, granted_by, granted_at, is_active)
+               VALUES($1, $2, $3, NOW(), true)
+               ON CONFLICT (principal_id, role_id) DO UPDATE SET
+                 granted_by = EXCLUDED.granted_by,
+                 granted_at = EXCLUDED.granted_at,
+                 is_active = true`,
+        values: [principalId, roleId, grantedBy]
+      };
+      
+      await client.query(insertQuery);
+    });
+    
+    // Invalidate cache for the affected principal
+    await this.invalidator.invalidateForRoleAssignment(tenantId, principalId);
   }
 
   /**
    * Revoke a role from a principal
    */
   async revokeRole(principalId: string, roleId: string, tenantId: string): Promise<void> {
-    // Verify role exists and belongs to the tenant
-    const roleQuery = {
-      text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
-      values: [roleId, tenantId]
-    };
-    const roleResult = await this.dbPool.query(roleQuery);
-    if (roleResult.rows.length === 0) {
-      throw new Error('Role not found or invalid tenant');
-    }
+    const transactionManager = new TransactionManager(this.dbPool);
     
-    // Remove the principal-role assignment from the database
-    const updateQuery = {
-      text: 'UPDATE principal_roles SET is_active = false, granted_at = NOW() WHERE principal_id = $1 AND role_id = $2',
-      values: [principalId, roleId]
-    };
+    await transactionManager.executeInTransaction(async (client) => {
+      // Verify role exists and belongs to the tenant
+      const roleQuery = {
+        text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
+        values: [roleId, tenantId]
+      };
+      const roleResult = await client.query(roleQuery);
+      if (roleResult.rows.length === 0) {
+        throw new Error('Role not found or invalid tenant');
+      }
+      
+      // Remove the principal-role assignment from the database
+      const updateQuery = {
+        text: 'UPDATE principal_roles SET is_active = false, granted_at = NOW() WHERE principal_id = $1 AND role_id = $2',
+        values: [principalId, roleId]
+      };
+      
+      await client.query(updateQuery);
+    });
     
-    await this.dbPool.query(updateQuery);
+    // Invalidate cache for the affected principal
+    await this.invalidator.invalidateForRoleRevocation(tenantId, principalId);
   }
 
   /**
@@ -536,18 +568,51 @@ export class RBACHierarchyManager {
   /**
    * Validate role hierarchy for cycles
    */
-  private validateRoleHierarchy(roleId: string, newParentId?: string): boolean {
+  private async validateRoleHierarchy(roleId: string, newParentId?: string): Promise<boolean> {
     if (!newParentId) return true;
     
-    // To detect cycles, we need to check if setting newParentId as parent would create a cycle
-    // This is a simplified check - in practice you'd query the DB to traverse the hierarchy
-    // and ensure no cycles are formed
+    // Check if setting newParentId as parent would create a cycle
+    // Get the full hierarchy path from newParentId upward
+    const hierarchyPath = await this.getRoleHierarchyPath(newParentId);
     
-    // For now, return true as cycle detection would involve complex recursive DB queries
-    // In a real implementation, we would need to:
-    // 1. Get the full hierarchy path from newParentId upward
-    // 2. Check if roleId is in that path
-    return true;
+    // Check if roleId is in that path (which would create a cycle)
+    return !hierarchyPath.includes(roleId);
+  }
+  
+  /**
+   * Get the hierarchy path from a role upward to root
+   */
+  private async getRoleHierarchyPath(roleId: string, visited: Set<string> = new Set()): Promise<string[]> {
+    if (visited.has(roleId)) {
+      // Cycle detected - return empty array to prevent infinite recursion
+      return [];
+    }
+    
+    visited.add(roleId);
+    
+    // Get the role to check its parent
+    const roleQuery = {
+      text: 'SELECT parent_role_id FROM roles WHERE id = $1',
+      values: [roleId]
+    };
+    
+    const result = await this.dbPool.query(roleQuery);
+    
+    if (result.rows.length === 0 || !result.rows[0].parent_role_id) {
+      // Reached root or role doesn't exist
+      visited.delete(roleId);
+      return [];
+    }
+    
+    const parentRoleId = result.rows[0].parent_role_id;
+    const path = [parentRoleId];
+    
+    // Recursively get the rest of the path
+    const subPath = await this.getRoleHierarchyPath(parentRoleId, visited);
+    path.push(...subPath);
+    
+    visited.delete(roleId);
+    return path;
   }
 
   /**
@@ -574,7 +639,7 @@ export class RBACHierarchyManager {
     }
     
     // Validate no cycles would be created
-    if (!this.validateRoleHierarchy(roleId, parentRoleId)) {
+    if (!(await this.validateRoleHierarchy(roleId, parentRoleId))) {
       throw new Error('Cannot create role hierarchy cycle');
     }
 

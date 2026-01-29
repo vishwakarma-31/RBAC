@@ -29,42 +29,52 @@ export interface AuthorizationResponse {
 import { RedisCacheManager } from "../cache/RedisCacheManager";
 import { RBACHierarchyManager } from "../rbac/RBACHierarchyManager";
 import { PolicyEngine, PolicyEvaluationContext } from "../policy/PolicyEngine";
+import { RateLimiter } from "../utils/rateLimiter";
+import config from "../config";
+import { AuditLogger } from "../audit/AuditLogger";
 
 export class AuthorizationEngine {
   private cache: RedisCacheManager;
   private rbacManager: RBACHierarchyManager;
   private policyEngine: PolicyEngine;
+  private rateLimiter: RateLimiter;
+  private auditLogger: AuditLogger;
 
   /**
    * Main authorization decision method
    */
   constructor() {
-    this.cache = new RedisCacheManager({
-      host: process.env.REDIS_HOST || "localhost",
-      port: parseInt(process.env.REDIS_PORT || "6379"),
-      password: process.env.REDIS_PASSWORD,
-      db: parseInt(process.env.REDIS_DB || "0"),
-      ttl: {
-        authorization: parseInt(process.env.CACHE_TTL_AUTHORIZATION || "300"),
-        roleHierarchy: parseInt(process.env.CACHE_TTL_ROLE_HIERARCHY || "3600"),
-        policy: parseInt(process.env.CACHE_TTL_POLICY || "1800"),
-        tenantConfig: parseInt(process.env.CACHE_TTL_TENANT_CONFIG || "7200"),
-      },
-      prefix: {
-        authorization: "authz:",
-        roleHierarchy: "role-hierarchy:",
-        policy: "policy:",
-        tenant: "tenant:",
-      }
-    });
-    this.rbacManager = new RBACHierarchyManager();
-    this.policyEngine = new PolicyEngine();
+    this.cache = new RedisCacheManager(config);
+    this.rbacManager = new RBACHierarchyManager(config);
+    this.policyEngine = new PolicyEngine(config);
+    this.rateLimiter = new RateLimiter(
+      config.rateLimit.maxTokens,
+      config.rateLimit.intervalSeconds
+    );
+    this.auditLogger = new AuditLogger();
   }
 
+  /**
+   * Evaluates an authorization request against the configured authorization models
+   * Processes RBAC, ABAC, and Policy checks in sequence
+   * 
+   * @param request - The authorization request containing tenant, principal, action, and resource details
+   * @returns Promise<AuthorizationResponse> - The result of the authorization evaluation
+   * 
+   * @throws Error if there are issues with the request validation or evaluation
+   */
   async evaluate(request: AuthorizationRequest): Promise<AuthorizationResponse> {
     const startTime = Date.now();
     
     try {
+      // Rate limiting check - use tenant and principal as the rate limiting key
+      const rateLimitKey = `${request.tenantId}:${request.principalId}`;
+      const isAllowed = await this.rateLimiter.isAllowed(rateLimitKey);
+      
+      if (!isAllowed) {
+        return this.createDeniedResponse('Rate limit exceeded. Too many authorization requests.');
+      }
+
       // 1. Check cache first
       const cacheKey = this.generateCacheKey(request);
       const cachedResult = await this.cache.getAuthorizationDecision({
@@ -147,13 +157,35 @@ export class AuthorizationEngine {
 
       // 5. Evaluate policies (highest precedence)
       const policyResult = await this.evaluatePolicies(request);
-      const response = policyResult.allowed
-        ? this.createAllowedResponse(policyResult.reason, policyResult.policyEvaluated)
-        : this.createDeniedResponse(
-            policyResult.reason,
-            policyResult.failedConditions,
-            policyResult.policyEvaluated
-          );
+      // Short-circuit: if policy evaluation resulted in deny, return immediately
+      if (!policyResult.allowed) {
+        const response = this.createDeniedResponse(
+          policyResult.reason,
+          policyResult.failedConditions,
+          policyResult.policyEvaluated
+        );
+        await this.cache.cacheAuthorizationDecision(
+          {
+            tenantId: request.tenantId,
+            principalId: request.principalId,
+            action: request.action,
+            resourceType: request.resource.type,
+            resourceId: request.resource.id
+          },
+          {
+            allowed: response.allowed,
+            reason: response.reason,
+            policyEvaluated: response.policy_evaluated,
+            failedConditions: response.failed_conditions,
+            explanation: response.explanation,
+            evaluatedAt: new Date()
+          }
+        );
+        return response;
+      }
+
+      // Final allowed response if all checks passed
+      const response = this.createAllowedResponse(policyResult.reason, policyResult.policyEvaluated);
 
       // 6. Cache the result
       if (!response.cache_hit) {  // Only cache if not already cached
@@ -176,16 +208,31 @@ export class AuthorizationEngine {
         );
       }
       
+      // 7. Log the authorization decision for compliance and debugging
+      await this.auditLogger.logAuthorizationDecision(request, response);
+      
       return response;
 
     } catch (error) {
       console.error("Authorization evaluation error:", error);
-      return this.createDeniedResponse('Internal authorization error');
+      // Log the error for debugging purposes
+      const errorResponse = this.createDeniedResponse('Internal authorization error');
+      await this.auditLogger.logAuthorizationDecision(request, errorResponse, { error: (error as Error).message });
+      return errorResponse;
     }
   }
 
   /**
    * Evaluate RBAC permissions
+   */
+  /**
+   * Evaluates RBAC (Role-Based Access Control) permissions for the given request
+   * Checks if the principal has any role that grants the required permission
+   * 
+   * @param request - The authorization request containing tenant, principal, action, and resource details
+   * @returns Promise<{ allowed: boolean; reason: string; }> - Whether the request is allowed and the reason
+   * 
+   * @throws Error if there are issues with role or permission retrieval
    */
   private async evaluateRBAC(request: AuthorizationRequest): Promise<{
     allowed: boolean;
@@ -226,6 +273,13 @@ export class AuthorizationEngine {
 
   /**
    * Evaluate ABAC conditions
+   */
+  /**
+   * Evaluates ABAC (Attribute-Based Access Control) conditions for the given request
+   * Checks attribute-based constraints like resource ownership, department isolation, etc.
+   * 
+   * @param request - The authorization request containing tenant, principal, action, and resource details
+   * @returns Promise<{ allowed: boolean; reason: string; failedConditions?: string[]; }> - Whether the request is allowed, the reason, and any failed conditions
    */
   private async evaluateABAC(request: AuthorizationRequest): Promise<{
     allowed: boolean;
@@ -271,6 +325,15 @@ export class AuthorizationEngine {
 
   /**
    * Evaluate policies
+   */
+  /**
+   * Evaluates policy rules for the given request
+   * Applies policy-based authorization rules with highest precedence
+   * 
+   * @param request - The authorization request containing tenant, principal, action, and resource details
+   * @returns Promise<{ allowed: boolean; reason: string; policyEvaluated?: string; failedConditions?: string[]; }> - Whether the request is allowed, the reason, policy evaluated, and any failed conditions
+   * 
+   * @throws Error if there are issues with policy evaluation
    */
   private async evaluatePolicies(request: AuthorizationRequest): Promise<{
     allowed: boolean;
@@ -323,14 +386,62 @@ export class AuthorizationEngine {
     }
   }
 
+  /**
+   * Validates the authorization request parameters
+   * Checks for required fields and proper formatting
+   * 
+   * @param request - The authorization request to validate
+   * @returns { isValid: boolean; errors: string[] } - Whether the request is valid and any validation errors
+   */
   private validateRequest(request: AuthorizationRequest): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
 
-    if (!request.tenantId) errors.push('tenantId is required');
-    if (!request.principalId) errors.push('principalId is required');
-    if (!request.action) errors.push('action is required');
-    if (!request.resource?.type) errors.push('resource.type is required');
-    if (!request.resource?.id) errors.push('resource.id is required');
+    // Validate tenantId
+    if (!request.tenantId) {
+      errors.push('tenantId is required');
+    } else if (typeof request.tenantId !== 'string' || !this.isValidUUID(request.tenantId)) {
+      errors.push('tenantId must be a valid UUID');
+    }
+
+    // Validate principalId
+    if (!request.principalId) {
+      errors.push('principalId is required');
+    } else if (typeof request.principalId !== 'string' || !this.isValidUUID(request.principalId)) {
+      errors.push('principalId must be a valid UUID');
+    }
+
+    // Validate action
+    if (!request.action) {
+      errors.push('action is required');
+    } else if (typeof request.action !== 'string' || !/^[a-zA-Z0-9_.-]+$/.test(request.action)) {
+      errors.push('action contains invalid characters');
+    }
+
+    // Validate resource
+    if (!request.resource?.type) {
+      errors.push('resource.type is required');
+    } else if (typeof request.resource.type !== 'string' || !/^[a-zA-Z0-9_.-]+$/.test(request.resource.type)) {
+      errors.push('resource.type contains invalid characters');
+    }
+
+    if (!request.resource?.id) {
+      errors.push('resource.id is required');
+    } else if (typeof request.resource.id !== 'string' || !this.isValidUUID(request.resource.id) && isNaN(Number(request.resource.id))) {
+      errors.push('resource.id must be a valid UUID or numeric ID');
+    }
+
+    // Validate additional attributes
+    if (request.resource.attributes && typeof request.resource.attributes !== 'object') {
+      errors.push('resource.attributes must be an object');
+    }
+
+    if (request.principal?.attributes && typeof request.principal.attributes !== 'object') {
+      errors.push('principal.attributes must be an object');
+    }
+
+    if (request.context && typeof request.context !== 'object') {
+      errors.push('context must be an object');
+    }
 
     return {
       isValid: errors.length === 0,
@@ -338,10 +449,35 @@ export class AuthorizationEngine {
     };
   }
 
+  /**
+   * Validates if a string is a properly formatted UUID
+   * 
+   * @param uuid - The string to validate as a UUID
+   * @returns boolean - Whether the string is a valid UUID
+   */
+  private isValidUUID(uuid: string): boolean {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(uuid);
+  }
+
+  /**
+   * Generates a unique cache key for the authorization request
+   * Used to store and retrieve cached authorization decisions
+   * 
+   * @param request - The authorization request to generate a key for
+   * @returns string - The cache key string
+   */
   private generateCacheKey(request: AuthorizationRequest): string {
     return `${request.tenantId}:${request.principalId}:${request.action}:${request.resource.type}:${request.resource.id}`;
   }
 
+  /**
+   * Creates an allowed authorization response
+   * 
+   * @param reason - The reason why the request was allowed
+   * @param policyEvaluated - Optional policy that was evaluated
+   * @returns AuthorizationResponse - The allowed authorization response
+   */
   private createAllowedResponse(reason: string, policyEvaluated?: string): AuthorizationResponse {
     return {
       allowed: true,
@@ -353,6 +489,14 @@ export class AuthorizationEngine {
     };
   }
 
+  /**
+   * Creates a denied authorization response
+   * 
+   * @param reason - The reason why the request was denied
+   * @param failedConditions - Optional list of failed conditions
+   * @param policyEvaluated - Optional policy that was evaluated
+   * @returns AuthorizationResponse - The denied authorization response
+   */
   private createDeniedResponse(
     reason: string,
     failedConditions?: string[],
@@ -372,12 +516,24 @@ export class AuthorizationEngine {
   /**
    * Clear cache for a specific principal
    */
+  /**
+   * Invalidates the authorization cache for a specific principal
+   * 
+   * @param tenantId - The tenant ID whose cache needs invalidation
+   * @param principalId - The principal ID whose cache needs invalidation
+   * @returns Promise<void>
+   */
   public async invalidateCache(tenantId: string, principalId: string): Promise<void> {
     await this.cache.invalidateAuthorizationCache(tenantId, principalId);
   }
 
   /**
    * Get cache statistics
+   */
+  /**
+   * Gets cache statistics for monitoring and debugging
+   * 
+   * @returns { hits: number; misses: number; hitRate: number; errors: number } - Cache statistics
    */
   public getCacheStats(): { hits: number; misses: number; hitRate: number; errors: number } {
     return this.cache.getStats();

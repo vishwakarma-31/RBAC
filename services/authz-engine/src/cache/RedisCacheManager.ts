@@ -39,7 +39,11 @@ interface CacheValue {
   evaluatedAt: Date;
 }
 
-export class RedisCacheManager {
+import { CacheInterface, CachedAuthorizationDecision } from './CacheInterface';
+import { AppConfig } from '../config';
+import globalConfig from '../config';
+
+export class RedisCacheManager implements CacheInterface {
   private redis: any; // Redis client will be initialized in constructor
   private config: CacheConfig;
   private isConnected: boolean = false;
@@ -49,17 +53,28 @@ export class RedisCacheManager {
     errors: number;
   } = { hits: 0, misses: 0, errors: 0 };
 
-  constructor(config: CacheConfig) {
-    this.config = config;
+  constructor(appConfig?: AppConfig) {
+    // Use provided config or default to global config
+    const config = appConfig || globalConfig;
+    
+    this.config = {
+      host: config.redis.host,
+      port: config.redis.port,
+      password: config.redis.password,
+      db: config.redis.db,
+      ttl: config.cache.ttl,
+      prefix: config.cache.prefix,
+    };
     
     // Dynamically import Redis client
     const Redis = require('ioredis');
     this.redis = new Redis({
-      host: config.host,
-      port: config.port,
-      password: config.password,
-      db: config.db,
-      lazyConnect: true
+      host: this.config.host,
+      port: this.config.port,
+      password: this.config.password,
+      db: this.config.db,
+      lazyConnect: true,
+      ...(config.redis.tls && { tls: config.redis.tls })
     });
     
     this.setupEventHandlers();
@@ -125,8 +140,7 @@ export class RedisCacheManager {
    */
   async cacheAuthorizationDecision(
     key: CacheKey,
-    value: CacheValue,
-    ttl: number = this.config.ttl.authorization
+    decision: CachedAuthorizationDecision
   ): Promise<void> {
     if (!this.isConnected) {
       this.stats.errors++;
@@ -136,11 +150,11 @@ export class RedisCacheManager {
     try {
       const cacheKey = this.generateAuthKey(key);
       const serializedValue = JSON.stringify({
-        ...value,
-        evaluatedAt: value.evaluatedAt.toISOString()
+        ...decision,
+        evaluatedAt: decision.evaluatedAt.toISOString()
       });
 
-      await this.redis.setex(cacheKey, ttl, serializedValue);
+      await this.redis.setex(cacheKey, this.config.ttl.authorization, serializedValue);
     } catch (error) {
       this.stats.errors++;
       console.error('Failed to cache authorization decision:', error);
@@ -150,7 +164,7 @@ export class RedisCacheManager {
   /**
    * Get cached authorization decision
    */
-  async getAuthorizationDecision(key: CacheKey): Promise<CacheValue | null> {
+  async getAuthorizationDecision(key: CacheKey): Promise<CachedAuthorizationDecision | null> {
     if (!this.isConnected) {
       this.stats.errors++;
       return null;
@@ -344,9 +358,7 @@ export class RedisCacheManager {
    */
   async invalidateAuthorizationCache(
     tenantId: string,
-    principalId: string,
-    resourceType?: string,
-    resourceId?: string
+    principalId: string
   ): Promise<void> {
     if (!this.isConnected) {
       this.stats.errors++;
@@ -355,7 +367,7 @@ export class RedisCacheManager {
 
     try {
       // Use pattern matching to delete multiple keys
-      const pattern = `${this.config.prefix.authorization}${tenantId}:${principalId}${resourceType ? `:*:${resourceType}` : ''}${resourceId ? `:${resourceId}` : ''}*`;
+      const pattern = `${this.config.prefix.authorization}${tenantId}:${principalId}:*:*:*`;
       
       // Get all matching keys
       const keys = await this.redis.keys(pattern);

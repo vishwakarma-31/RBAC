@@ -60,17 +60,21 @@ interface PolicyEvaluationResult {
 }
 
 import { Pool } from 'pg';
+import { AppConfig } from '../config';
+import globalConfig from '../config';
 
 export class PolicyEngine {
   private dbPool: Pool;
   private evaluationCache: Map<string, PolicyEvaluationResult> = new Map();
   
-  constructor() {
+  constructor(appConfig?: AppConfig) {
+    const config = appConfig || globalConfig;
+    
     this.dbPool = new Pool({
-      connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/rbac_platform',
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionString: config.database.connectionString,
+      max: config.database.maxConnections,
+      idleTimeoutMillis: config.database.idleTimeoutMs,
+      connectionTimeoutMillis: config.database.connectionTimeoutMs,
     });
   }
 
