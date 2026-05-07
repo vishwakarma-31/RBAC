@@ -59,23 +59,34 @@ interface PolicyEvaluationResult {
   failedConditions?: string[];
 }
 
-import { Pool } from 'pg';
+import { MongoClient, Db, Collection } from 'mongodb';
 import { AppConfig } from '../config';
 import globalConfig from '../config';
 
 export class PolicyEngine {
-  private dbPool: Pool;
+  private client: MongoClient;
+  private db: Db;
   private evaluationCache: Map<string, PolicyEvaluationResult> = new Map();
   
   constructor(appConfig?: AppConfig) {
     const config = appConfig || globalConfig;
     
-    this.dbPool = new Pool({
-      connectionString: config.database.connectionString,
-      max: config.database.maxConnections,
-      idleTimeoutMillis: config.database.idleTimeoutMs,
-      connectionTimeoutMillis: config.database.connectionTimeoutMs,
+    this.client = new MongoClient(config.database.connectionString, {
+      maxPoolSize: config.database.maxPoolSize,
+      minPoolSize: config.database.minPoolSize,
+      serverSelectionTimeoutMS: config.database.serverSelectionTimeoutMs,
+      socketTimeoutMS: config.database.socketTimeoutMs,
     });
+    
+    this.db = this.client.db(config.database.databaseName);
+  }
+  
+  async connect(): Promise<void> {
+    await this.client.connect();
+  }
+  
+  async disconnect(): Promise<void> {
+    await this.client.close();
   }
 
   /**
@@ -110,33 +121,11 @@ export class PolicyEngine {
     // Validate policy rules
     this.validatePolicyRules(policy.rules);
 
-    // Insert policy into database
-    const insertQuery = {
-      text: `INSERT INTO policies(id, tenant_id, name, version, description, priority, rules, status, created_at, updated_at)
-             VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             RETURNING *`,
-      values: [
-        policy.id, policy.tenantId, policy.name, policy.version,
-        policy.description, policy.priority, JSON.stringify(policy.rules),
-        policy.status, policy.createdAt, policy.updatedAt
-      ]
-    };
+    // Insert policy into MongoDB
+    const collection = this.db.collection('policies');
+    await collection.insertOne(policy);
     
-    const result = await this.dbPool.query(insertQuery);
-    const insertedPolicy = result.rows[0];
-    
-    return {
-      id: insertedPolicy.id,
-      tenantId: insertedPolicy.tenant_id,
-      name: insertedPolicy.name,
-      version: insertedPolicy.version,
-      description: insertedPolicy.description,
-      priority: insertedPolicy.priority,
-      rules: insertedPolicy.rules,
-      status: insertedPolicy.status,
-      createdAt: insertedPolicy.created_at,
-      updatedAt: insertedPolicy.updated_at
-    };
+    return policy;
   }
 
   /**
@@ -158,24 +147,13 @@ export class PolicyEngine {
     }
 
     // Get active policies for tenant, sorted by priority (highest first)
-    const query = {
-      text: 'SELECT * FROM policies WHERE tenant_id = $1 AND status = $2 ORDER BY priority DESC',
-      values: [tenantId, 'active']
-    };
+    const collection = this.db.collection('policies');
+    const cursor = collection.find({
+      tenantId: tenantId,
+      status: 'active'
+    }).sort({ priority: -1 });
     
-    const result = await this.dbPool.query(query);
-    const activePolicies = result.rows.map(row => ({
-      id: row.id,
-      tenantId: row.tenant_id,
-      name: row.name,
-      version: row.version,
-      description: row.description,
-      priority: row.priority,
-      rules: row.rules,
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
+    const activePolicies = await cursor.toArray();
 
     // Evaluate policies in priority order
     for (const policy of activePolicies) {
@@ -525,46 +503,29 @@ export class PolicyEngine {
    * Get active policies for a tenant
    */
   async getActivePolicies(tenantId: string): Promise<Policy[]> {
-    const query = {
-      text: 'SELECT * FROM policies WHERE tenant_id = $1 AND status = $2 ORDER BY priority DESC',
-      values: [tenantId, 'active']
-    };
+    const collection = this.db.collection('policies');
+    const cursor = collection.find({
+      tenantId: tenantId,
+      status: 'active'
+    }).sort({ priority: -1 });
     
-    const result = await this.dbPool.query(query);
-    return result.rows.map(row => ({
-      id: row.id,
-      tenantId: row.tenant_id,
-      name: row.name,
-      version: row.version,
-      description: row.description,
-      priority: row.priority,
-      rules: row.rules,
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
+    return cursor.toArray();
   }
 
   /**
    * Update policy status
    */
   async updatePolicyStatus(policyId: string, status: 'active' | 'inactive' | 'draft'): Promise<void> {
-    // Check if policy exists
-    const checkQuery = {
-      text: 'SELECT id FROM policies WHERE id = $1',
-      values: [policyId]
-    };
-    const checkResult = await this.dbPool.query(checkQuery);
-    if (checkResult.rows.length === 0) {
+    const collection = this.db.collection('policies');
+    
+    const result = await collection.updateOne(
+      { id: policyId },
+      { $set: { status, updatedAt: new Date() } }
+    );
+    
+    if (result.matchedCount === 0) {
       throw new Error('Policy not found');
     }
-    
-    // Update in database
-    const updateQuery = {
-      text: 'UPDATE policies SET status = $1, updated_at = NOW() WHERE id = $2',
-      values: [status, policyId]
-    };
-    await this.dbPool.query(updateQuery);
     
     // Clear cache when policy status changes
     this.evaluationCache.clear();

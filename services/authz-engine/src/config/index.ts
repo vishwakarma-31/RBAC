@@ -4,12 +4,14 @@
  */
 
 export interface AppConfig {
-  // Database configuration
+  // Database configuration (MongoDB Atlas)
   database: {
-    connectionString: string;
-    maxConnections: number;
-    idleTimeoutMs: number;
-    connectionTimeoutMs: number;
+    connectionString: string; // MongoDB Atlas connection string (mongodb+srv://...)
+    databaseName: string;      // Database name
+    maxPoolSize: number;        // Max connection pool size
+    minPoolSize: number;        // Min connection pool size
+    serverSelectionTimeoutMs: number;
+    socketTimeoutMs: number;
   };
 
   // Redis configuration
@@ -61,10 +63,12 @@ export interface AppConfig {
 // Default configuration values
 const defaultConfig: AppConfig = {
   database: {
-    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/rbac_platform',
-    maxConnections: parseInt(process.env.DB_MAX_CONNECTIONS || '20'),
-    idleTimeoutMs: parseInt(process.env.DB_IDLE_TIMEOUT_MS || '30000'),
-    connectionTimeoutMs: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || '2000'),
+    connectionString: process.env.MONGODB_ATLAS_URI || 'mongodb+srv://username:password@cluster.mongodb.net/test?retryWrites=true&w=majority',
+    databaseName: process.env.MONGODB_DATABASE || 'rbac_platform',
+    maxPoolSize: parseInt(process.env.MONGO_MAX_POOL_SIZE || '10'),
+    minPoolSize: parseInt(process.env.MONGO_MIN_POOL_SIZE || '2'),
+    serverSelectionTimeoutMs: parseInt(process.env.MONGO_SERVER_SELECT_TIMEOUT || '5000'),
+    socketTimeoutMs: parseInt(process.env.MONGO_SOCKET_TIMEOUT || '30000'),
   },
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
@@ -128,8 +132,8 @@ function validateConfig(config: AppConfig): void {
 
 function isValidConnectionString(connectionString: string): boolean {
   try {
-    // Basic validation for PostgreSQL connection string
-    return connectionString.startsWith('postgresql://') || connectionString.startsWith('postgres://');
+    // Accept MongoDB Atlas (mongodb+srv://) or local MongoDB (mongodb://)
+    return connectionString.startsWith('mongodb+srv://') || connectionString.startsWith('mongodb://');
   } catch {
     return false;
   }

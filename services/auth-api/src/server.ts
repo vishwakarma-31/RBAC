@@ -81,13 +81,13 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     // Generate a simple token (in real implementation, use JWT)
     const token = btoa(`${user.id}:${user.email}:${Date.now()}`);
 
-    res.json({
+    return res.json({
       user,
       token
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -143,13 +143,13 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     // Generate a simple token (in real implementation, use JWT)
     const token = btoa(`${newUser.id}:${newUser.email}:${Date.now()}`);
 
-    res.status(201).json({
+    return res.status(201).json({
       user: newUser,
       token
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -191,9 +191,9 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
       updatedAt: new Date().toISOString()
     };
     
-    res.json(user);
+    return res.json(user);
   } catch (error) {
-    res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid token' });
   }
 });
 

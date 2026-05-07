@@ -1,28 +1,20 @@
 version: '3.8'
 
 services:
-  database:
-    build:
-      context: ./infrastructure/database
-      dockerfile: Dockerfile
-    container_name: rbac-database
+  mongodb:
+    image: mongo:7
+    container_name: rbac-mongodb
     env_file:
       - .env
     environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - APP_USER_PASSWORD=${APP_USER_PASSWORD}
-      - SYSTEM_USER_PASSWORD=${SYSTEM_USER_PASSWORD}
-      - SEED_DATABASE=${SEED_DATABASE}
+      - MONGO_INITDB_DATABASE=${MONGODB_DATABASE}
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infrastructure/database/migrations:/docker-entrypoint-initdb.d/migrations:ro
-      - ./infrastructure/database/scripts:/docker-entrypoint-initdb.d/scripts:ro
+      - mongodb_data:/data/db
+      - ./infrastructure/database/mongo-seed:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -54,14 +46,15 @@ services:
       - .env
     environment:
       - NODE_ENV=${NODE_ENV}
-      - DATABASE_URL=postgresql://authz_app_user:${APP_USER_PASSWORD}@database:5432/${POSTGRES_DB}
+      - MONGODB_ATLAS_URI=mongodb://mongodb:27017/${MONGODB_DATABASE}
+      - MONGODB_DATABASE=${MONGODB_DATABASE}
       - REDIS_URL=${REDIS_URL}
       - JWT_SECRET=${JWT_SECRET}
       - LOG_LEVEL=${LOG_LEVEL}
     ports:
       - "3000:3000"
     depends_on:
-      database:
+      mongodb:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -83,7 +76,8 @@ services:
       - .env
     environment:
       - NODE_ENV=${NODE_ENV}
-      - DATABASE_URL=postgresql://authz_app_user:${APP_USER_PASSWORD}@database:5432/${POSTGRES_DB}
+      - MONGODB_ATLAS_URI=mongodb://mongodb:27017/${MONGODB_DATABASE}
+      - MONGODB_DATABASE=${MONGODB_DATABASE}
       - REDIS_URL=${REDIS_URL}
       - AUTHZ_ENGINE_URL=${AUTHZ_ENGINE_URL}
       - JWT_SECRET=${JWT_SECRET}
@@ -91,7 +85,7 @@ services:
     ports:
       - "3001:3001"
     depends_on:
-      database:
+      mongodb:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -115,14 +109,15 @@ services:
       - .env
     environment:
       - NODE_ENV=${NODE_ENV}
-      - DATABASE_URL=postgresql://authz_system_user:${SYSTEM_USER_PASSWORD}@database:5432/${POSTGRES_DB}
+      - MONGODB_ATLAS_URI=mongodb://mongodb:27017/${MONGODB_DATABASE}
+      - MONGODB_DATABASE=${MONGODB_DATABASE}
       - REDIS_URL=${REDIS_URL}
       - JWT_SECRET=${JWT_SECRET}
       - LOG_LEVEL=${LOG_LEVEL}
     ports:
       - "3002:3002"
     depends_on:
-      database:
+      mongodb:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -158,5 +153,5 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  mongodb_data:
   redis_data:
