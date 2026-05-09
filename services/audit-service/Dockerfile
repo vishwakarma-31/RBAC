@@ -1,21 +1,44 @@
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy root package files
 COPY package*.json ./
+
+# Copy all workspace package files
+COPY shared/package*.json ./shared/
+COPY services/authz-engine/package*.json ./services/authz-engine/
+COPY services/management-api/package*.json ./services/management-api/
+COPY services/audit-service/package*.json ./services/audit-service/
+COPY dashboard/package*.json ./dashboard/
+COPY infrastructure/database/package*.json ./infrastructure/database/
+
+# Install dependencies for the entire workspace
 RUN npm install
 
-COPY . .
-RUN npm run build
+# Copy source code
+COPY shared ./shared
+COPY services/audit-service ./services/audit-service
 
-FROM node:18-alpine
+# Build shared first
+RUN npm run build --workspace=@rbac-platform/shared
 
+# Build the service
+RUN npm run build --workspace=@rbac-platform/audit-service
+
+# Second stage: production
+FROM node:20-alpine
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install --production
+# Copy node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
+# Copy shared (required for file: dependency)
+COPY --from=builder /app/shared ./shared
 
-COPY --from=builder /app/dist ./dist
+# Copy service built files
+WORKDIR /app/services/audit-service
+COPY --from=builder /app/services/audit-service/dist ./dist
+COPY --from=builder /app/services/audit-service/package*.json ./
 
 EXPOSE 3002
 

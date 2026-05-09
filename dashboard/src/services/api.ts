@@ -1,7 +1,7 @@
 import { User, Role, Permission, Policy, AuditLog, Organization, ApiKey, DashboardStats } from '../types';
 
 // API base URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001/api/v1';
 
 // API request helper function
 const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
@@ -23,7 +23,14 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
     throw new Error(errorData || `HTTP error! status: ${response.status}`);
   }
   
-  return response.json();
+  const data = await response.json();
+  
+  // Unwrap the data if it's in the { data, count } format
+  if (data && typeof data === 'object' && 'data' in data && Array.isArray(data.data)) {
+    return data.data;
+  }
+  
+  return data;
 };
 
 // Define API endpoints

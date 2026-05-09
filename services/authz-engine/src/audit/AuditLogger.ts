@@ -31,8 +31,8 @@ export class AuditLogger {
     this.dbPool = dbPool || new Pool({
       connectionString: config.database.connectionString,
       max: config.database.maxConnections,
-      idleTimeoutMillis: config.database.idleTimeoutMs,
-      connectionTimeoutMillis: config.database.connectionTimeoutMs,
+      idleTimeoutMillis: config.database.idleTimeoutMillis,
+      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
     });
     
     // Check if auditing is enabled via config

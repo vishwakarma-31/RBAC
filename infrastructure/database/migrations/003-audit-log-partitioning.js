@@ -6,7 +6,20 @@ exports.up = (pgm) => {
   // Create partitioned audit_logs table for better performance and maintenance
   pgm.sql(`
     CREATE TABLE audit_logs_partitioned (
-      LIKE audit_logs INCLUDING ALL
+      id UUID NOT NULL DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL,
+      principal_id UUID NOT NULL,
+      action VARCHAR(50) NOT NULL,
+      resource_type VARCHAR(50) NOT NULL,
+      resource_id VARCHAR(100) NOT NULL,
+      decision VARCHAR(10) NOT NULL,
+      reason TEXT NOT NULL,
+      policy_evaluated VARCHAR(100),
+      request_hash VARCHAR(64) NOT NULL,
+      previous_hash VARCHAR(64) NOT NULL,
+      timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      metadata JSONB,
+      PRIMARY KEY (id, timestamp)
     ) PARTITION BY RANGE (timestamp);
   `);
 
@@ -87,6 +100,7 @@ exports.up = (pgm) => {
 
   // Create view to maintain compatibility with existing code
   pgm.sql(`
+    DROP TABLE IF EXISTS audit_logs CASCADE;
     CREATE OR REPLACE VIEW audit_logs AS
     SELECT * FROM audit_logs_partitioned;
   `);

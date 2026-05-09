@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "buildCommand": "npm install && npm run build --workspace=@rbac-platform/shared && npm run build --workspace=@rbac-platform/admin-dashboard",
+  "outputDirectory": "dashboard/build",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

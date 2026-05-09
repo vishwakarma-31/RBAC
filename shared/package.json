@@ -2,8 +2,12 @@
   "name": "@rbac-platform/shared",
   "version": "1.0.0",
   "description": "Shared types, constants, and utilities for the Authorization Platform",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "jest"

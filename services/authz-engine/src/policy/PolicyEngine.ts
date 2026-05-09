@@ -3,14 +3,14 @@
  * JSON-based policy evaluation with deterministic rule processing
  */
 
-interface PolicyCondition {
+export interface PolicyCondition {
   attribute: string;
   operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'in' | 'contains' | 'exists';
   value?: any;
   values?: any[]; // For 'in' operator
 }
 
-interface PolicyRule {
+export interface PolicyRule {
   id: string;
   description?: string;
   condition: PolicyCondition | PolicyConditionGroup;
@@ -18,12 +18,12 @@ interface PolicyRule {
   priority?: number;
 }
 
-interface PolicyConditionGroup {
+export interface PolicyConditionGroup {
   operator: 'and' | 'or' | 'not';
   conditions: (PolicyCondition | PolicyConditionGroup)[];
 }
 
-interface Policy {
+export interface Policy {
   id: string;
   tenantId: string;
   name: string;
@@ -50,7 +50,7 @@ export interface PolicyEvaluationContext {
   context?: Record<string, any>;
 }
 
-interface PolicyEvaluationResult {
+export interface PolicyEvaluationResult {
   matched: boolean;
   effect: 'allow' | 'deny';
   ruleId?: string;
@@ -153,7 +153,7 @@ export class PolicyEngine {
       status: 'active'
     }).sort({ priority: -1 });
     
-    const activePolicies = await cursor.toArray();
+    const activePolicies = await cursor.toArray() as unknown as Policy[];
 
     // Evaluate policies in priority order
     for (const policy of activePolicies) {
@@ -509,7 +509,7 @@ export class PolicyEngine {
       status: 'active'
     }).sort({ priority: -1 });
     
-    return cursor.toArray();
+    return cursor.toArray() as unknown as Policy[];
   }
 
   /**

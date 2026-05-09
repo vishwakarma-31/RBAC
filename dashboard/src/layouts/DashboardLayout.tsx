@@ -1,14 +1,10 @@
 import React, { ReactNode, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, Link, Outlet } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 
-interface DashboardLayoutProps {
-  children: ReactNode;
-}
-
-const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
+const DashboardLayout: React.FC = () => {
   const { user, isLoading, logout } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -48,44 +44,44 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         <nav className="p-2">
           <ul className="space-y-1">
             <li>
-              <a href="/dashboard" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/dashboard" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">Dashboard</span>
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/users" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/users" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">Users</span>
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/roles" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/roles" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">Roles</span>
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/permissions" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/permissions" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">Permissions</span>
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/policies" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/policies" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">Policies</span>
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/organizations" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/organizations" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">Organizations</span>
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/api-keys" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/api-keys" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">API Keys</span>
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="/audit-logs" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+              <Link to="/audit" className="flex items-center p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
                 <span className="ml-3">Audit Logs</span>
-              </a>
+              </Link>
             </li>
             <li>
               <button 
@@ -115,7 +111,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         </header>
         
         <main className="mt-16 p-4 md:p-6">
-          {children}
+          <Outlet />
         </main>
       </div>
 

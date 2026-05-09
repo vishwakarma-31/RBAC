@@ -48,23 +48,17 @@ export const App: React.FC = () => {
             } />
             
             {/* Protected Dashboard Routes */}
-            <Route element={
-              <DashboardLayout>
-                <Routes>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/admin" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                  <Route path="/users" element={<ProtectedRoute requiredRole="admin"><Users /></ProtectedRoute>} />
-                  <Route path="/roles" element={<ProtectedRoute requiredRole="admin"><Roles /></ProtectedRoute>} />
-                  <Route path="/permissions" element={<ProtectedRoute requiredRole="admin"><Permissions /></ProtectedRoute>} />
-                  <Route path="/policies" element={<ProtectedRoute requiredRole="admin"><Policies /></ProtectedRoute>} />
-                  <Route path="/audit" element={<ProtectedRoute requiredRole="admin"><AuditLogs /></ProtectedRoute>} />
-                  <Route path="/organizations" element={<ProtectedRoute requiredRole="admin"><Organizations /></ProtectedRoute>} />
-                  <Route path="/api-keys" element={<ProtectedRoute requiredRole="admin"><ApiKeys /></ProtectedRoute>} />
-                  <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                </Routes>
-              </DashboardLayout>
-            }>
+            <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="users" element={<Users />} />
+              <Route path="roles" element={<Roles />} />
+              <Route path="permissions" element={<Permissions />} />
+              <Route path="policies" element={<Policies />} />
+              <Route path="audit" element={<AuditLogs />} />
+              <Route path="organizations" element={<Organizations />} />
+              <Route path="api-keys" element={<ApiKeys />} />
+              <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>
         </AuthProvider>

@@ -72,8 +72,8 @@ export class RBACHierarchyManager {
     this.dbPool = new Pool({
       connectionString: config.database.connectionString,
       max: config.database.maxConnections,
-      idleTimeoutMillis: config.database.idleTimeoutMs,
-      connectionTimeoutMillis: config.database.connectionTimeoutMs,
+      idleTimeoutMillis: config.database.idleTimeoutMillis,
+      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
     });
     
     // Initialize the cache invalidator

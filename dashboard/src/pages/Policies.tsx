@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
+import { Skeleton } from '../components/ui/Skeleton';
 import { 
   PlusIcon, 
   PencilIcon, 
@@ -96,10 +97,44 @@ export const Policies: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading.policies) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="space-y-6 animate-pulse">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Skeleton className="h-8 w-40 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32 mt-4 sm:mt-0" />
+        </div>
+
+        <Card>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+            <Skeleton className="h-10 w-full max-w-md" />
+            <Skeleton className="h-10 w-10 mt-2 sm:mt-0 sm:ml-3" />
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-6 gap-4 py-3 border-b border-gray-100">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-4 w-20" />
+              ))}
+            </div>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="grid grid-cols-6 gap-4 py-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-6 w-16" />
+                <Skeleton className="h-4 w-12" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-8 w-20" />
+                <div className="flex justify-end space-x-2">
+                  <Skeleton className="h-8 w-8" />
+                  <Skeleton className="h-8 w-8" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     );
   }

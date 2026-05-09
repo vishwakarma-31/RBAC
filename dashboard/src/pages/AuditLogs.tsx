@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuditLog } from '../types';
 import { auditService } from '../services/api';
 import { Card } from '../components/ui/Card';
+import { Skeleton } from '../components/ui/Skeleton';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -68,8 +69,45 @@ export const AuditLogs: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="space-y-6 animate-pulse">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-96" />
+        </div>
+
+        <Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+          <div className="flex justify-between items-center mb-4">
+            <Skeleton className="h-4 w-40" />
+            <div className="flex space-x-2">
+              <Skeleton className="h-10 w-10" />
+              <Skeleton className="h-10 w-32" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-6 gap-4 py-3 border-b border-gray-100">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-4 w-24" />
+              ))}
+            </div>
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="grid grid-cols-6 gap-4 py-4">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-6 w-16" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     );
   }

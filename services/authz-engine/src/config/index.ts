@@ -12,6 +12,9 @@ export interface AppConfig {
     minPoolSize: number;        // Min connection pool size
     serverSelectionTimeoutMs: number;
     socketTimeoutMs: number;
+    maxConnections: number;     // PostgreSQL max connections
+    idleTimeoutMillis: number;      // PostgreSQL idle timeout
+    connectionTimeoutMillis: number; // PostgreSQL connection timeout
   };
 
   // Redis configuration
@@ -69,6 +72,9 @@ const defaultConfig: AppConfig = {
     minPoolSize: parseInt(process.env.MONGO_MIN_POOL_SIZE || '2'),
     serverSelectionTimeoutMs: parseInt(process.env.MONGO_SERVER_SELECT_TIMEOUT || '5000'),
     socketTimeoutMs: parseInt(process.env.MONGO_SOCKET_TIMEOUT || '30000'),
+    maxConnections: parseInt(process.env.DB_MAX_CONNECTIONS || '20'),
+    idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000'),
+    connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '2000'),
   },
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
