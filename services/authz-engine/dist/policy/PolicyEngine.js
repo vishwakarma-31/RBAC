@@ -1,16 +1,28 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PolicyEngine = void 0;
-const pg_1 = require("pg");
+const mongodb_1 = require("mongodb");
+const config_1 = __importDefault(require("../config"));
 class PolicyEngine {
-    constructor() {
+    constructor(appConfig) {
         this.evaluationCache = new Map();
-        this.dbPool = new pg_1.Pool({
-            connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/rbac_platform',
-            max: 20,
-            idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 2000,
+        const config = appConfig || config_1.default;
+        this.client = new mongodb_1.MongoClient(config.database.connectionString, {
+            maxPoolSize: config.database.maxPoolSize,
+            minPoolSize: config.database.minPoolSize,
+            serverSelectionTimeoutMS: config.database.serverSelectionTimeoutMs,
+            socketTimeoutMS: config.database.socketTimeoutMs,
         });
+        this.db = this.client.db(config.database.databaseName);
+    }
+    async connect() {
+        await this.client.connect();
+    }
+    async disconnect() {
+        await this.client.close();
     }
     async createPolicy(tenantId, name, version, rules, description, priority = 0, status = 'active') {
         const policy = {
@@ -30,30 +42,9 @@ class PolicyEngine {
             updatedAt: new Date()
         };
         this.validatePolicyRules(policy.rules);
-        const insertQuery = {
-            text: `INSERT INTO policies(id, tenant_id, name, version, description, priority, rules, status, created_at, updated_at)
-             VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             RETURNING *`,
-            values: [
-                policy.id, policy.tenantId, policy.name, policy.version,
-                policy.description, policy.priority, JSON.stringify(policy.rules),
-                policy.status, policy.createdAt, policy.updatedAt
-            ]
-        };
-        const result = await this.dbPool.query(insertQuery);
-        const insertedPolicy = result.rows[0];
-        return {
-            id: insertedPolicy.id,
-            tenantId: insertedPolicy.tenant_id,
-            name: insertedPolicy.name,
-            version: insertedPolicy.version,
-            description: insertedPolicy.description,
-            priority: insertedPolicy.priority,
-            rules: insertedPolicy.rules,
-            status: insertedPolicy.status,
-            createdAt: insertedPolicy.created_at,
-            updatedAt: insertedPolicy.updated_at
-        };
+        const collection = this.db.collection('policies');
+        await collection.insertOne(policy);
+        return policy;
     }
     async evaluatePolicies(tenantId, context) {
         const cacheKey = this.generateCacheKey(tenantId, context);
@@ -64,23 +55,12 @@ class PolicyEngine {
                 explanation: `${cachedResult.explanation} (cached)`
             };
         }
-        const query = {
-            text: 'SELECT * FROM policies WHERE tenant_id = $1 AND status = $2 ORDER BY priority DESC',
-            values: [tenantId, 'active']
-        };
-        const result = await this.dbPool.query(query);
-        const activePolicies = result.rows.map(row => ({
-            id: row.id,
-            tenantId: row.tenant_id,
-            name: row.name,
-            version: row.version,
-            description: row.description,
-            priority: row.priority,
-            rules: row.rules,
-            status: row.status,
-            createdAt: row.created_at,
-            updatedAt: row.updated_at
-        }));
+        const collection = this.db.collection('policies');
+        const cursor = collection.find({
+            tenantId: tenantId,
+            status: 'active'
+        }).sort({ priority: -1 });
+        const activePolicies = await cursor.toArray();
         for (const policy of activePolicies) {
             const result = this.evaluatePolicy(policy, context);
             if (result.matched) {
@@ -331,38 +311,19 @@ class PolicyEngine {
         return `${tenantId}:${context.principal.id}:${context.action}:${context.resource.type}:${context.resource.id}`;
     }
     async getActivePolicies(tenantId) {
-        const query = {
-            text: 'SELECT * FROM policies WHERE tenant_id = $1 AND status = $2 ORDER BY priority DESC',
-            values: [tenantId, 'active']
-        };
-        const result = await this.dbPool.query(query);
-        return result.rows.map(row => ({
-            id: row.id,
-            tenantId: row.tenant_id,
-            name: row.name,
-            version: row.version,
-            description: row.description,
-            priority: row.priority,
-            rules: row.rules,
-            status: row.status,
-            createdAt: row.created_at,
-            updatedAt: row.updated_at
-        }));
+        const collection = this.db.collection('policies');
+        const cursor = collection.find({
+            tenantId: tenantId,
+            status: 'active'
+        }).sort({ priority: -1 });
+        return cursor.toArray();
     }
     async updatePolicyStatus(policyId, status) {
-        const checkQuery = {
-            text: 'SELECT id FROM policies WHERE id = $1',
-            values: [policyId]
-        };
-        const checkResult = await this.dbPool.query(checkQuery);
-        if (checkResult.rows.length === 0) {
+        const collection = this.db.collection('policies');
+        const result = await collection.updateOne({ id: policyId }, { $set: { status, updatedAt: new Date() } });
+        if (result.matchedCount === 0) {
             throw new Error('Policy not found');
         }
-        const updateQuery = {
-            text: 'UPDATE policies SET status = $1, updated_at = NOW() WHERE id = $2',
-            values: [status, policyId]
-        };
-        await this.dbPool.query(updateQuery);
         this.evaluationCache.clear();
     }
     getEvaluationStats() {

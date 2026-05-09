@@ -1,15 +1,31 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RBACHierarchyManager = void 0;
 const pg_1 = require("pg");
+const config_1 = __importDefault(require("../config"));
+const TransactionManager_1 = require("../db/TransactionManager");
+const RedisCacheManager_1 = require("../cache/RedisCacheManager");
+const EventDrivenInvalidator_1 = require("../cache/EventDrivenInvalidator");
 class RBACHierarchyManager {
-    constructor() {
+    constructor(appConfig, cacheManager) {
+        this.cacheManager = cacheManager;
+        const config = appConfig || config_1.default;
         this.dbPool = new pg_1.Pool({
-            connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/rbac_platform',
-            max: 20,
-            idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 2000,
+            connectionString: config.database.connectionString,
+            max: config.database.maxConnections,
+            idleTimeoutMillis: config.database.idleTimeoutMillis,
+            connectionTimeoutMillis: config.database.connectionTimeoutMillis,
         });
+        if (cacheManager) {
+            this.invalidator = new EventDrivenInvalidator_1.EventDrivenInvalidator(cacheManager, this.dbPool);
+        }
+        else {
+            const defaultCacheManager = new RedisCacheManager_1.RedisCacheManager(config);
+            this.invalidator = new EventDrivenInvalidator_1.EventDrivenInvalidator(defaultCacheManager, this.dbPool);
+        }
     }
     async createRole(tenantId, name, description, parentRoleId) {
         if (parentRoleId) {
@@ -151,43 +167,51 @@ class RBACHierarchyManager {
         }));
     }
     async assignRole(principalId, roleId, grantedBy, tenantId) {
-        const roleQuery = {
-            text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
-            values: [roleId, tenantId]
-        };
-        const roleResult = await this.dbPool.query(roleQuery);
-        if (roleResult.rows.length === 0) {
-            throw new Error('Role not found or invalid tenant');
-        }
-        const constraintViolation = await this.checkRoleConstraintViolation(principalId, roleId, tenantId);
-        if (constraintViolation) {
-            throw new Error(`Role constraint violation: ${constraintViolation}`);
-        }
-        const insertQuery = {
-            text: `INSERT INTO principal_roles(principal_id, role_id, granted_by, granted_at, is_active)
-             VALUES($1, $2, $3, NOW(), true)
-             ON CONFLICT (principal_id, role_id) DO UPDATE SET
-               granted_by = EXCLUDED.granted_by,
-               granted_at = EXCLUDED.granted_at,
-               is_active = true`,
-            values: [principalId, roleId, grantedBy]
-        };
-        await this.dbPool.query(insertQuery);
+        const transactionManager = new TransactionManager_1.TransactionManager(this.dbPool);
+        await transactionManager.executeInTransaction(async (client) => {
+            const roleQuery = {
+                text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
+                values: [roleId, tenantId]
+            };
+            const roleResult = await client.query(roleQuery);
+            if (roleResult.rows.length === 0) {
+                throw new Error('Role not found or invalid tenant');
+            }
+            const constraintViolation = await this.checkRoleConstraintViolation(principalId, roleId, tenantId);
+            if (constraintViolation) {
+                throw new Error(`Role constraint violation: ${constraintViolation}`);
+            }
+            const insertQuery = {
+                text: `INSERT INTO principal_roles(principal_id, role_id, granted_by, granted_at, is_active)
+               VALUES($1, $2, $3, NOW(), true)
+               ON CONFLICT (principal_id, role_id) DO UPDATE SET
+                 granted_by = EXCLUDED.granted_by,
+                 granted_at = EXCLUDED.granted_at,
+                 is_active = true`,
+                values: [principalId, roleId, grantedBy]
+            };
+            await client.query(insertQuery);
+        });
+        await this.invalidator.invalidateForRoleAssignment(tenantId, principalId);
     }
     async revokeRole(principalId, roleId, tenantId) {
-        const roleQuery = {
-            text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
-            values: [roleId, tenantId]
-        };
-        const roleResult = await this.dbPool.query(roleQuery);
-        if (roleResult.rows.length === 0) {
-            throw new Error('Role not found or invalid tenant');
-        }
-        const updateQuery = {
-            text: 'UPDATE principal_roles SET is_active = false, granted_at = NOW() WHERE principal_id = $1 AND role_id = $2',
-            values: [principalId, roleId]
-        };
-        await this.dbPool.query(updateQuery);
+        const transactionManager = new TransactionManager_1.TransactionManager(this.dbPool);
+        await transactionManager.executeInTransaction(async (client) => {
+            const roleQuery = {
+                text: 'SELECT id, tenant_id FROM roles WHERE id = $1 AND tenant_id = $2 AND is_active = true',
+                values: [roleId, tenantId]
+            };
+            const roleResult = await client.query(roleQuery);
+            if (roleResult.rows.length === 0) {
+                throw new Error('Role not found or invalid tenant');
+            }
+            const updateQuery = {
+                text: 'UPDATE principal_roles SET is_active = false, granted_at = NOW() WHERE principal_id = $1 AND role_id = $2',
+                values: [principalId, roleId]
+            };
+            await client.query(updateQuery);
+        });
+        await this.invalidator.invalidateForRoleRevocation(tenantId, principalId);
     }
     async grantPermission(roleId, permissionId, tenantId) {
         const roleQuery = {
@@ -365,10 +389,32 @@ class RBACHierarchyManager {
         }
         return null;
     }
-    validateRoleHierarchy(roleId, newParentId) {
+    async validateRoleHierarchy(roleId, newParentId) {
         if (!newParentId)
             return true;
-        return true;
+        const hierarchyPath = await this.getRoleHierarchyPath(newParentId);
+        return !hierarchyPath.includes(roleId);
+    }
+    async getRoleHierarchyPath(roleId, visited = new Set()) {
+        if (visited.has(roleId)) {
+            return [];
+        }
+        visited.add(roleId);
+        const roleQuery = {
+            text: 'SELECT parent_role_id FROM roles WHERE id = $1',
+            values: [roleId]
+        };
+        const result = await this.dbPool.query(roleQuery);
+        if (result.rows.length === 0 || !result.rows[0].parent_role_id) {
+            visited.delete(roleId);
+            return [];
+        }
+        const parentRoleId = result.rows[0].parent_role_id;
+        const path = [parentRoleId];
+        const subPath = await this.getRoleHierarchyPath(parentRoleId, visited);
+        path.push(...subPath);
+        visited.delete(roleId);
+        return path;
     }
     async setParentRole(roleId, parentRoleId, tenantId) {
         const roleQuery = {
@@ -387,7 +433,7 @@ class RBACHierarchyManager {
         if (parentResult.rows.length === 0) {
             throw new Error('Parent role not found or invalid tenant');
         }
-        if (!this.validateRoleHierarchy(roleId, parentRoleId)) {
+        if (!(await this.validateRoleHierarchy(roleId, parentRoleId))) {
             throw new Error('Cannot create role hierarchy cycle');
         }
         const level = parentResult.rows[0].level + 1;

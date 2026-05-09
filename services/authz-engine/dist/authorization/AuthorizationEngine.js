@@ -1,35 +1,31 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthorizationEngine = void 0;
 const RedisCacheManager_1 = require("../cache/RedisCacheManager");
 const RBACHierarchyManager_1 = require("../rbac/RBACHierarchyManager");
 const PolicyEngine_1 = require("../policy/PolicyEngine");
+const rateLimiter_1 = require("../utils/rateLimiter");
+const config_1 = __importDefault(require("../config"));
+const AuditLogger_1 = require("../audit/AuditLogger");
 class AuthorizationEngine {
     constructor() {
-        this.cache = new RedisCacheManager_1.RedisCacheManager({
-            host: process.env.REDIS_HOST || "localhost",
-            port: parseInt(process.env.REDIS_PORT || "6379"),
-            password: process.env.REDIS_PASSWORD,
-            db: parseInt(process.env.REDIS_DB || "0"),
-            ttl: {
-                authorization: parseInt(process.env.CACHE_TTL_AUTHORIZATION || "300"),
-                roleHierarchy: parseInt(process.env.CACHE_TTL_ROLE_HIERARCHY || "3600"),
-                policy: parseInt(process.env.CACHE_TTL_POLICY || "1800"),
-                tenantConfig: parseInt(process.env.CACHE_TTL_TENANT_CONFIG || "7200"),
-            },
-            prefix: {
-                authorization: "authz:",
-                roleHierarchy: "role-hierarchy:",
-                policy: "policy:",
-                tenant: "tenant:",
-            }
-        });
-        this.rbacManager = new RBACHierarchyManager_1.RBACHierarchyManager();
-        this.policyEngine = new PolicyEngine_1.PolicyEngine();
+        this.cache = new RedisCacheManager_1.RedisCacheManager(config_1.default);
+        this.rbacManager = new RBACHierarchyManager_1.RBACHierarchyManager(config_1.default);
+        this.policyEngine = new PolicyEngine_1.PolicyEngine(config_1.default);
+        this.rateLimiter = new rateLimiter_1.RateLimiter(config_1.default.rateLimit.maxTokens, config_1.default.rateLimit.intervalSeconds);
+        this.auditLogger = new AuditLogger_1.AuditLogger();
     }
     async evaluate(request) {
         const startTime = Date.now();
         try {
+            const rateLimitKey = `${request.tenantId}:${request.principalId}`;
+            const isAllowed = await this.rateLimiter.isAllowed(rateLimitKey);
+            if (!isAllowed) {
+                return this.createDeniedResponse('Rate limit exceeded. Too many authorization requests.');
+            }
             const cacheKey = this.generateCacheKey(request);
             const cachedResult = await this.cache.getAuthorizationDecision({
                 tenantId: request.tenantId,
@@ -92,9 +88,25 @@ class AuthorizationEngine {
                 return response;
             }
             const policyResult = await this.evaluatePolicies(request);
-            const response = policyResult.allowed
-                ? this.createAllowedResponse(policyResult.reason, policyResult.policyEvaluated)
-                : this.createDeniedResponse(policyResult.reason, policyResult.failedConditions, policyResult.policyEvaluated);
+            if (!policyResult.allowed) {
+                const response = this.createDeniedResponse(policyResult.reason, policyResult.failedConditions, policyResult.policyEvaluated);
+                await this.cache.cacheAuthorizationDecision({
+                    tenantId: request.tenantId,
+                    principalId: request.principalId,
+                    action: request.action,
+                    resourceType: request.resource.type,
+                    resourceId: request.resource.id
+                }, {
+                    allowed: response.allowed,
+                    reason: response.reason,
+                    policyEvaluated: response.policy_evaluated,
+                    failedConditions: response.failed_conditions,
+                    explanation: response.explanation,
+                    evaluatedAt: new Date()
+                });
+                return response;
+            }
+            const response = this.createAllowedResponse(policyResult.reason, policyResult.policyEvaluated);
             if (!response.cache_hit) {
                 await this.cache.cacheAuthorizationDecision({
                     tenantId: request.tenantId,
@@ -111,11 +123,14 @@ class AuthorizationEngine {
                     evaluatedAt: new Date()
                 });
             }
+            await this.auditLogger.logAuthorizationDecision(request, response);
             return response;
         }
         catch (error) {
             console.error("Authorization evaluation error:", error);
-            return this.createDeniedResponse('Internal authorization error');
+            const errorResponse = this.createDeniedResponse('Internal authorization error');
+            await this.auditLogger.logAuthorizationDecision(request, errorResponse, { error: error.message });
+            return errorResponse;
         }
     }
     async evaluateRBAC(request) {
@@ -211,20 +226,53 @@ class AuthorizationEngine {
     }
     validateRequest(request) {
         const errors = [];
-        if (!request.tenantId)
+        if (!request.tenantId) {
             errors.push('tenantId is required');
-        if (!request.principalId)
+        }
+        else if (typeof request.tenantId !== 'string' || !this.isValidUUID(request.tenantId)) {
+            errors.push('tenantId must be a valid UUID');
+        }
+        if (!request.principalId) {
             errors.push('principalId is required');
-        if (!request.action)
+        }
+        else if (typeof request.principalId !== 'string' || !this.isValidUUID(request.principalId)) {
+            errors.push('principalId must be a valid UUID');
+        }
+        if (!request.action) {
             errors.push('action is required');
-        if (!request.resource?.type)
+        }
+        else if (typeof request.action !== 'string' || !/^[a-zA-Z0-9_.-]+$/.test(request.action)) {
+            errors.push('action contains invalid characters');
+        }
+        if (!request.resource?.type) {
             errors.push('resource.type is required');
-        if (!request.resource?.id)
+        }
+        else if (typeof request.resource.type !== 'string' || !/^[a-zA-Z0-9_.-]+$/.test(request.resource.type)) {
+            errors.push('resource.type contains invalid characters');
+        }
+        if (!request.resource?.id) {
             errors.push('resource.id is required');
+        }
+        else if (typeof request.resource.id !== 'string' || !this.isValidUUID(request.resource.id) && isNaN(Number(request.resource.id))) {
+            errors.push('resource.id must be a valid UUID or numeric ID');
+        }
+        if (request.resource.attributes && typeof request.resource.attributes !== 'object') {
+            errors.push('resource.attributes must be an object');
+        }
+        if (request.principal?.attributes && typeof request.principal.attributes !== 'object') {
+            errors.push('principal.attributes must be an object');
+        }
+        if (request.context && typeof request.context !== 'object') {
+            errors.push('context must be an object');
+        }
         return {
             isValid: errors.length === 0,
             errors
         };
+    }
+    isValidUUID(uuid) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(uuid);
     }
     generateCacheKey(request) {
         return `${request.tenantId}:${request.principalId}:${request.action}:${request.resource.type}:${request.resource.id}`;

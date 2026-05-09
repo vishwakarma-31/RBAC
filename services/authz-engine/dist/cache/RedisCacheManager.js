@@ -1,18 +1,31 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RedisCacheManager = void 0;
+const config_1 = __importDefault(require("../config"));
 class RedisCacheManager {
-    constructor(config) {
+    constructor(appConfig) {
         this.isConnected = false;
         this.stats = { hits: 0, misses: 0, errors: 0 };
-        this.config = config;
+        const config = appConfig || config_1.default;
+        this.config = {
+            host: config.redis.host,
+            port: config.redis.port,
+            password: config.redis.password,
+            db: config.redis.db,
+            ttl: config.cache.ttl,
+            prefix: config.cache.prefix,
+        };
         const Redis = require('ioredis');
         this.redis = new Redis({
-            host: config.host,
-            port: config.port,
-            password: config.password,
-            db: config.db,
-            lazyConnect: true
+            host: this.config.host,
+            port: this.config.port,
+            password: this.config.password,
+            db: this.config.db,
+            lazyConnect: true,
+            ...(config.redis.tls && { tls: config.redis.tls })
         });
         this.setupEventHandlers();
     }
@@ -48,7 +61,7 @@ class RedisCacheManager {
     generateTenantKey(tenantId) {
         return `${this.config.prefix.tenant}${tenantId}`;
     }
-    async cacheAuthorizationDecision(key, value, ttl = this.config.ttl.authorization) {
+    async cacheAuthorizationDecision(key, decision) {
         if (!this.isConnected) {
             this.stats.errors++;
             return;
@@ -56,10 +69,10 @@ class RedisCacheManager {
         try {
             const cacheKey = this.generateAuthKey(key);
             const serializedValue = JSON.stringify({
-                ...value,
-                evaluatedAt: value.evaluatedAt.toISOString()
+                ...decision,
+                evaluatedAt: decision.evaluatedAt.toISOString()
             });
-            await this.redis.setex(cacheKey, ttl, serializedValue);
+            await this.redis.setex(cacheKey, this.config.ttl.authorization, serializedValue);
         }
         catch (error) {
             this.stats.errors++;
@@ -208,13 +221,13 @@ class RedisCacheManager {
             return null;
         }
     }
-    async invalidateAuthorizationCache(tenantId, principalId, resourceType, resourceId) {
+    async invalidateAuthorizationCache(tenantId, principalId) {
         if (!this.isConnected) {
             this.stats.errors++;
             return;
         }
         try {
-            const pattern = `${this.config.prefix.authorization}${tenantId}:${principalId}${resourceType ? `:*:${resourceType}` : ''}${resourceId ? `:${resourceId}` : ''}*`;
+            const pattern = `${this.config.prefix.authorization}${tenantId}:${principalId}:*:*:*`;
             const keys = await this.redis.keys(pattern);
             if (keys.length > 0) {
                 await this.redis.del(...keys);

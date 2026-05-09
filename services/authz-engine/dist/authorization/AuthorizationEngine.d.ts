@@ -26,12 +26,15 @@ export declare class AuthorizationEngine {
     private cache;
     private rbacManager;
     private policyEngine;
+    private rateLimiter;
+    private auditLogger;
     constructor();
     evaluate(request: AuthorizationRequest): Promise<AuthorizationResponse>;
     private evaluateRBAC;
     private evaluateABAC;
     private evaluatePolicies;
     private validateRequest;
+    private isValidUUID;
     private generateCacheKey;
     private createAllowedResponse;
     private createDeniedResponse;

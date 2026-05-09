@@ -31,9 +31,13 @@ interface RoleConstraint {
     createdAt: Date;
     updatedAt: Date;
 }
+import { AppConfig } from '../config';
+import { RedisCacheManager } from '../cache/RedisCacheManager';
 export declare class RBACHierarchyManager {
+    private cacheManager?;
     private dbPool;
-    constructor();
+    private invalidator;
+    constructor(appConfig?: AppConfig, cacheManager?: RedisCacheManager | undefined);
     createRole(tenantId: string, name: string, description?: string, parentRoleId?: string): Promise<Role>;
     getRoles(tenantId: string): Promise<Role[]>;
     getPrincipalRoles(principalId: string, tenantId: string): Promise<Role[]>;
@@ -45,6 +49,7 @@ export declare class RBACHierarchyManager {
     createRoleConstraint(tenantId: string, name: string, roleSet: string[], constraintType: 'static_sod' | 'dynamic_sod', description?: string, violationAction?: 'deny' | 'alert'): Promise<RoleConstraint>;
     private checkRoleConstraintViolation;
     private validateRoleHierarchy;
+    private getRoleHierarchyPath;
     setParentRole(roleId: string, parentRoleId: string, tenantId: string): Promise<void>;
     getRoleHierarchy(tenantId: string): Promise<any>;
     private generateId;

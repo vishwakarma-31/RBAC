@@ -1,34 +1,51 @@
-export interface Config {
-    nodeEnv: string;
-    port: number;
-    corsOrigin: string | string[];
+export interface AppConfig {
     database: {
-        url: string;
-        poolMin: number;
-        poolMax: number;
+        connectionString: string;
+        databaseName: string;
+        maxPoolSize: number;
+        minPoolSize: number;
+        serverSelectionTimeoutMs: number;
+        socketTimeoutMs: number;
+        maxConnections: number;
+        idleTimeoutMillis: number;
+        connectionTimeoutMillis: number;
     };
     redis: {
-        url: string;
-    };
-    jwt: {
-        secret: string;
-        expiresIn: string;
-    };
-    rateLimit: {
-        windowMs: number;
-        max: number;
+        host: string;
+        port: number;
+        password?: string;
+        db: number;
+        tls?: {
+            rejectUnauthorized: boolean;
+        };
     };
     cache: {
         ttl: {
             authorization: number;
             roleHierarchy: number;
             policy: number;
+            tenantConfig: number;
+        };
+        prefix: {
+            authorization: string;
+            roleHierarchy: string;
+            policy: string;
+            tenant: string;
         };
     };
+    rateLimit: {
+        maxTokens: number;
+        intervalSeconds: number;
+    };
     logging: {
-        level: string;
-        format: 'json' | 'simple';
+        level: 'debug' | 'info' | 'warn' | 'error';
+        format: 'json' | 'text';
+    };
+    server: {
+        port: number;
+        host: string;
     };
 }
-export declare const config: Config;
+declare const config: AppConfig;
+export default config;
 //# sourceMappingURL=index.d.ts.map
