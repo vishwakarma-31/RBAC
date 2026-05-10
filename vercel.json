@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npm install && npm run build -w @rbac-platform/shared && npm run build -w @rbac-platform/admin-dashboard",
+  "buildCommand": "npm run build",
   "outputDirectory": "dashboard/build",
   "rewrites": [
     {

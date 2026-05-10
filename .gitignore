@@ -97,3 +97,4 @@ pnpm-lock.yaml
 # Deployment
 .deploy/
 .terraform/
+.vercel
